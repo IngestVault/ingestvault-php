@@ -10,4 +10,8 @@
             <directory>tests</directory>
         </testsuite>
     </testsuites>
+    <php>
+        <!-- The API key tests inspect stack trace arguments, which production php.ini files switch off. -->
+        <ini name="zend.exception_ignore_args" value="0"/>
+    </php>
 </phpunit>

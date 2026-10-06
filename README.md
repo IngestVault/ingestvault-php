@@ -1,0 +1,146 @@
+# IngestVault PHP
+
+The PHP client for the IngestVault API. It sends events to IngestVault, which stores them and delivers them to your endpoints as webhooks. It needs PHP 8.2 or newer and works with any framework.
+
+## Installation
+
+```bash
+composer require ingestvault/ingestvault-php
+```
+
+## Configuration
+
+```php
+use IngestVault\Client;
+
+$client = new Client('ivk_...');
+```
+
+The API key is the only required value. The others have defaults:
+
+```php
+$client = new Client(
+    apiKey: 'ivk_...',
+    baseUrl: 'https://api.ingestvault.com/v1',
+    timeout: 10.0, // seconds, per try
+    retries: 2,    // 0 disables retries
+);
+```
+
+An API key that is empty, or that contains spaces, control characters or anything outside plain ASCII (such as a trailing newline read from a file), throws an `InvalidArgumentException` before any request is made.
+
+## Sending an event
+
+```php
+$event = $client->sendEvent('order.created', [
+    'order' => 1042,
+    'total' => 99.5,
+]);
+
+$event->id;                     // '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d'
+$event->type;                   // 'order.created'
+$event->typeRegistrationStatus; // 'registered', 'unregistered' or 'archived'
+$event->receivedAt;             // DateTimeImmutable
+$event->idempotent;             // true when this answer repeats an earlier send
+```
+
+The payload can be any value that encodes as JSON, or left out. An event whose type is not registered, or is archived, is still accepted: `typeRegistrationStatus` reports it, and no exception is thrown. The API checks the type name and the payload size; the client sends what it is given.
+
+## Idempotency and retries
+
+Every send carries an `Idempotency-Key`. Pass your own as the third argument to make a send safe to repeat; otherwise the client generates one per send.
+
+```php
+$event = $client->sendEvent('order.created', ['order' => 1042], 'order-created-1042');
+```
+
+Sending the same type and payload again with the same key within 24 hours returns the original event, with `idempotent` set to `true`. Reusing a key with a different payload throws an `IdempotencyConflictException`.
+
+Network failures and 5xx answers are retried, up to `retries` times, after a pause of 250 ms before the first retry and 500 ms before the second. Every retry sends the same key, so a retry never creates a second event. Nothing else is retried. A 429 is thrown straight away with the wait time from `Retry-After`; the client never sleeps on it, so you decide when to try again.
+
+A send can be prepared now and sent later, for example from a queued job. The idempotency key and the request body are fixed when the event is prepared, and a `PreparedEvent` can be serialized:
+
+```php
+use IngestVault\PreparedEvent;
+
+$prepared = new PreparedEvent('order.created', ['order' => 1042]);
+
+// later, possibly in another process, possibly more than once
+$event = $client->sendPreparedEvent($prepared);
+```
+
+## Handling errors
+
+A request that fails throws an exception that extends `IngestVault\Exception\IngestVaultException`: a `NetworkException` when no answer arrived, or an `ApiException` or one of its subclasses when the answer is an error or cannot be read, with the HTTP `status`, the API's `problemCode` and its message.
+
+```php
+use IngestVault\Exception\ApiException;
+use IngestVault\Exception\AuthenticationException;
+use IngestVault\Exception\IdempotencyConflictException;
+use IngestVault\Exception\NetworkException;
+use IngestVault\Exception\PayloadTooLargeException;
+use IngestVault\Exception\QuotaExceededException;
+use IngestVault\Exception\RateLimitedException;
+use IngestVault\Exception\ServerException;
+use IngestVault\Exception\ValidationException;
+
+try {
+    $client->sendEvent('order.created', $payload);
+} catch (ValidationException $e) {
+    $e->errors;      // ['type' => ['The type format is invalid.']]
+} catch (RateLimitedException | QuotaExceededException $e) {
+    $e->retryAfter;  // seconds to wait
+} catch (AuthenticationException $e) {
+    // 401: the API key is missing, wrong or revoked
+} catch (IdempotencyConflictException $e) {
+    // 409: the key was already used for a different payload
+} catch (PayloadTooLargeException $e) {
+    // 413: the event is larger than 1 MB
+} catch (ServerException | NetworkException $e) {
+    // 5xx or no answer, after the retries ran out
+} catch (ApiException $e) {
+    $e->status;      // 403
+    $e->problemCode; // a code this client does not know yet
+    $e->getMessage();
+}
+```
+
+`problemCode` is `null` when an answer carries no problem document, for example an error page from a proxy.
+
+A call the client cannot turn into a request fails with PHP's own exceptions before anything is sent: a payload that cannot be encoded as JSON throws a `JsonException`, and a value that cannot be sent as a header, such as an idempotency key with a line break, throws an `InvalidArgumentException`.
+
+## Testing
+
+The client sends its requests through Guzzle. Pass a Guzzle client over a `MockHandler` and your tests run without a network:
+
+```php
+use GuzzleHttp\Client as GuzzleClient;
+use GuzzleHttp\Handler\MockHandler;
+use GuzzleHttp\Psr7\Response;
+use IngestVault\Client;
+
+$mock = new MockHandler([
+    new Response(201, [], json_encode([
+        'id' => '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d',
+        'type' => 'order.created',
+        'type_registration_status' => 'registered',
+        'received_at' => '2026-10-05T12:00:00Z',
+        'idempotent' => false,
+    ])),
+]);
+
+$client = new Client('ivk_test', httpClient: new GuzzleClient(['handler' => $mock]));
+```
+
+`$mock->getLastRequest()` returns the request that was sent.
+
+## Verifying deliveries
+
+IngestVault delivers events following the [Standard Webhooks](https://www.standardwebhooks.com) specification, and signing secrets are in its format. Verify deliveries with the official Standard Webhooks library for your language. Two headers are specific to IngestVault:
+
+- `webhook-id` is the id of the original event. It stays the same across delivery retries and replays, so use it to skip deliveries you have already handled.
+- `ingestvault-event-type` carries the event type.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

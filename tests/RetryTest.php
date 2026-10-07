@@ -7,6 +7,7 @@ namespace IngestVault\Tests;
 use GuzzleHttp\Exception\ConnectException;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
+use IngestVault\Client;
 use IngestVault\Exception\ApiException;
 use IngestVault\Exception\NetworkException;
 use IngestVault\Exception\QuotaExceededException;
@@ -23,7 +24,7 @@ final class RetryTest extends TestCase
 
     public function test_a_timeout_then_a_success_sends_one_event_with_the_same_key_on_both_tries(): void
     {
-        $event = $this->client([self::timeout(), self::eventResponse()], retries: 1)->sendEvent('order.created');
+        $event = $this->client([self::timeout(), self::eventResponse()], retries: 1)->events->send('order.created');
 
         $this->assertSame('0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d', $event->id);
         $this->assertCount(2, $this->history);
@@ -37,7 +38,7 @@ final class RetryTest extends TestCase
         $client = $this->client([self::timeout(), self::eventResponse()], retries: 0);
 
         try {
-            $client->sendEvent('order.created');
+            $client->events->send('order.created');
             $this->fail('Expected a NetworkException.');
         } catch (NetworkException $e) {
             $this->assertSame('Connection timed out after 10001 milliseconds', $e->getMessage());
@@ -58,7 +59,7 @@ final class RetryTest extends TestCase
         ], retries: 2);
 
         try {
-            $client->sendEvent('order.created');
+            $client->events->send('order.created');
             $this->fail('Expected a ' . $class . '.');
         } catch (RateLimitedException|QuotaExceededException $e) {
             $this->assertInstanceOf($class, $e);
@@ -86,7 +87,7 @@ final class RetryTest extends TestCase
         $this->expectException(NetworkException::class);
 
         try {
-            $client->sendEvent('order.created');
+            $client->events->send('order.created');
         } finally {
             $this->assertCount(3, $this->history);
         }
@@ -94,7 +95,7 @@ final class RetryTest extends TestCase
 
     public function test_a_server_error_is_retried_then_recovered(): void
     {
-        $event = $this->client([new Response(503), self::eventResponse()], retries: 1)->sendEvent('order.created');
+        $event = $this->client([new Response(503), self::eventResponse()], retries: 1)->events->send('order.created');
 
         $this->assertSame('0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d', $event->id);
         $this->assertCount(2, $this->history);
@@ -110,7 +111,7 @@ final class RetryTest extends TestCase
         ], retries: 1);
 
         try {
-            $client->sendEvent('order.created');
+            $client->events->send('order.created');
             $this->fail('Expected a ServerException.');
         } catch (ServerException $e) {
             $this->assertSame(500, $e->status);
@@ -128,12 +129,113 @@ final class RetryTest extends TestCase
         ], retries: 2);
 
         try {
-            $client->sendEvent('order.created');
+            $client->events->send('order.created');
             $this->fail('Expected an ApiException.');
         } catch (ApiException $e) {
             $this->assertSame(400, $e->status);
         }
 
         $this->assertCount(1, $this->history);
+    }
+
+    /**
+     * @param \Closure(Client): mixed $call
+     */
+    #[DataProvider('retriedOperations')]
+    public function test_a_timeout_on_a_retried_operation_is_retried_then_recovered(\Closure $call, \Closure $success): void
+    {
+        $call($this->client([self::timeout(), $success()], retries: 1));
+
+        $this->assertCount(2, $this->history);
+        $this->assertSame($this->sentUri(0), $this->sentUri(1));
+        $this->assertSame($this->sentBody(0), $this->sentBody(1));
+    }
+
+    /**
+     * @param \Closure(Client): mixed $call
+     */
+    #[DataProvider('retriedOperations')]
+    public function test_a_server_error_on_a_retried_operation_is_retried_then_recovered(\Closure $call, \Closure $success): void
+    {
+        $call($this->client([new Response(503), $success()], retries: 1));
+
+        $this->assertCount(2, $this->history);
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(Client): mixed, \Closure(): Response}>
+     */
+    public static function retriedOperations(): iterable
+    {
+        $id = '0199b2c4-1111-7a3b-9c4d-5e6f7a8b9c01';
+        $endpoint = static fn(): Response => self::endpointResponse();
+        $eventType = static fn(): Response => self::eventTypeResponse();
+        $subscription = static fn(): Response => self::subscriptionResponse();
+        $noContent = static fn(): Response => new Response(204);
+
+        yield 'send an event' => [static fn(Client $client): mixed => $client->events->send('order.created'), static fn(): Response => self::eventResponse()];
+        yield 'list endpoints' => [static fn(Client $client): mixed => $client->endpoints->list(), static fn(): Response => self::pageResponse([self::endpoint()], null)];
+        yield 'get an endpoint' => [static fn(Client $client): mixed => $client->endpoints->get($id), $endpoint];
+        yield 'update an endpoint' => [static fn(Client $client): mixed => $client->endpoints->update($id, ['enabled' => false]), $endpoint];
+        yield 'delete an endpoint' => [static fn(Client $client): mixed => $client->endpoints->delete($id), $noContent];
+        yield 'list signing secrets' => [static fn(Client $client): mixed => $client->signingSecrets->list($id), static fn(): Response => new Response(200, [], '{"data":[]}')];
+        yield 'list subscriptions' => [static fn(Client $client): mixed => $client->subscriptions->list($id), static fn(): Response => self::pageResponse([self::subscription()], null)];
+        yield 'get a subscription' => [static fn(Client $client): mixed => $client->subscriptions->get($id, 's1'), $subscription];
+        yield 'update a subscription' => [static fn(Client $client): mixed => $client->subscriptions->update($id, 's1', ['filter' => []]), $subscription];
+        yield 'delete a subscription' => [static fn(Client $client): mixed => $client->subscriptions->delete($id, 's1'), $noContent];
+        yield 'list event types' => [static fn(Client $client): mixed => $client->eventTypes->list(), static fn(): Response => self::pageResponse([self::eventType()], null)];
+        yield 'get an event type' => [static fn(Client $client): mixed => $client->eventTypes->get($id), $eventType];
+        yield 'update an event type' => [static fn(Client $client): mixed => $client->eventTypes->update($id, ['description' => null]), $eventType];
+        yield 'archive an event type' => [static fn(Client $client): mixed => $client->eventTypes->archive($id), $eventType];
+        yield 'unarchive an event type' => [static fn(Client $client): mixed => $client->eventTypes->unarchive($id), $eventType];
+    }
+
+    /**
+     * @param \Closure(Client): mixed $call
+     */
+    #[DataProvider('neverRetriedOperations')]
+    public function test_a_timeout_on_a_create_or_a_rotation_is_raised_after_one_try(\Closure $call, \Closure $success): void
+    {
+        $client = $this->client([self::timeout(), $success()], retries: 2);
+
+        try {
+            $call($client);
+            $this->fail('Expected a NetworkException.');
+        } catch (NetworkException $e) {
+            $this->assertSame('Connection timed out after 10001 milliseconds', $e->getMessage());
+        }
+
+        $this->assertCount(1, $this->history);
+    }
+
+    /**
+     * @param \Closure(Client): mixed $call
+     */
+    #[DataProvider('neverRetriedOperations')]
+    public function test_a_server_error_on_a_create_or_a_rotation_is_raised_after_one_try(\Closure $call, \Closure $success): void
+    {
+        $client = $this->client([self::problemResponse(500, 'internal_error', 'Something went wrong.'), $success()], retries: 2);
+
+        try {
+            $call($client);
+            $this->fail('Expected a ServerException.');
+        } catch (ServerException $e) {
+            $this->assertSame(500, $e->status);
+        }
+
+        $this->assertCount(1, $this->history);
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(Client): mixed, \Closure(): Response}>
+     */
+    public static function neverRetriedOperations(): iterable
+    {
+        $id = '0199b2c4-1111-7a3b-9c4d-5e6f7a8b9c01';
+
+        yield 'create an endpoint' => [static fn(Client $client): mixed => $client->endpoints->create('https://hooks.example.test/orders'), static fn(): Response => self::endpointResponse(201)];
+        yield 'create a subscription' => [static fn(Client $client): mixed => $client->subscriptions->create($id, []), static fn(): Response => self::subscriptionResponse(201)];
+        yield 'create an event type' => [static fn(Client $client): mixed => $client->eventTypes->create('order.created'), static fn(): Response => self::eventTypeResponse(201)];
+        yield 'rotate a signing secret' => [static fn(Client $client): mixed => $client->signingSecrets->rotate($id), static fn(): Response => self::signingSecretResponse(201)];
     }
 }

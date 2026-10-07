@@ -16,10 +16,7 @@ final readonly class PreparedEvent
     public function __construct(public string $type, mixed $payload = null, ?string $idempotencyKey = null)
     {
         $this->idempotencyKey = $idempotencyKey ?? self::generateKey();
-        $this->body = json_encode(
-            ['type' => $type, 'payload' => $payload],
-            JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION,
-        );
+        $this->body = Transport::encode(['type' => $type, 'payload' => $payload]);
     }
 
     private static function generateKey(): string

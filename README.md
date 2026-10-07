@@ -1,6 +1,6 @@
 # IngestVault PHP
 
-The PHP client for the IngestVault API. It sends events to IngestVault, which stores them and delivers them to your endpoints as webhooks. It needs PHP 8.2 or newer and works with any framework.
+The PHP client for the IngestVault API. It sends events to IngestVault, which stores them and delivers them to your endpoints as webhooks, and configures the endpoints, subscriptions and event types that decide where they go. It needs PHP 8.2 or newer and works with any framework.
 
 ## Installation
 
@@ -32,7 +32,7 @@ An API key that is empty, or that contains spaces, control characters or anythin
 ## Sending an event
 
 ```php
-$event = $client->sendEvent('order.created', [
+$event = $client->events->send('order.created', [
     'order' => 1042,
     'total' => 99.5,
 ]);
@@ -51,12 +51,14 @@ The payload can be any value that encodes as JSON, or left out. An event whose t
 Every send carries an `Idempotency-Key`. Pass your own as the third argument to make a send safe to repeat; otherwise the client generates one per send.
 
 ```php
-$event = $client->sendEvent('order.created', ['order' => 1042], 'order-created-1042');
+$event = $client->events->send('order.created', ['order' => 1042], 'order-created-1042');
 ```
 
 Sending the same type and payload again with the same key within 24 hours returns the original event, with `idempotent` set to `true`. Reusing a key with a different payload throws an `IdempotencyConflictException`.
 
 Network failures and 5xx answers are retried, up to `retries` times, after a pause of 250 ms before the first retry and 500 ms before the second. Every retry sends the same key, so a retry never creates a second event. Nothing else is retried. A 429 is thrown straight away with the wait time from `Retry-After`; the client never sleeps on it, so you decide when to try again.
+
+Creating an endpoint, a subscription or an event type and rotating a signing secret are never retried: they carry no idempotency key, and a request whose answer was lost may still have succeeded. Every other operation is retried like a send, up to `retries` times. A retried delete whose first try went through answers 404; treat a 404 on delete as deleted if that suits you.
 
 A send can be prepared now and sent later, for example from a queued job. The idempotency key and the request body are fixed when the event is prepared, and a `PreparedEvent` can be serialized:
 
@@ -66,8 +68,74 @@ use IngestVault\PreparedEvent;
 $prepared = new PreparedEvent('order.created', ['order' => 1042]);
 
 // later, possibly in another process, possibly more than once
-$event = $client->sendPreparedEvent($prepared);
+$event = $client->events->sendPrepared($prepared);
 ```
+
+## Endpoints
+
+```php
+$endpoint = $client->endpoints->create('https://shop.example/webhooks', description: 'Orders');
+
+$endpoint->id;      // '0199b2c4-...'
+$endpoint->enabled; // true
+
+$client->endpoints->get($endpoint->id);
+$client->endpoints->update($endpoint->id, ['enabled' => false, 'description' => null]);
+$client->endpoints->delete($endpoint->id);
+```
+
+An update changes only the members it is given: `null` clears the description, and a member that is left out keeps its value.
+
+## Signing secrets
+
+```php
+foreach ($client->signingSecrets->list($endpoint->id) as $secret) {
+    $secret->secret();   // 'whsec_...'
+    $secret->expiresAt;  // null for the current secret, a DateTimeImmutable for the previous one
+}
+
+$secret = $client->signingSecrets->rotate($endpoint->id);
+```
+
+The value is read through `secret()`, so it never shows up when the object is dumped or logged.
+
+## Subscriptions
+
+```php
+$subscription = $client->subscriptions->create($endpoint->id, ['order.created', 'order.paid']);
+
+$client->subscriptions->update($endpoint->id, $subscription->id, ['filter' => []]);
+$client->subscriptions->delete($endpoint->id, $subscription->id);
+```
+
+An empty filter delivers every event to the endpoint. An update replaces the whole filter.
+
+## Event types
+
+```php
+$type = $client->eventTypes->create('order.created', 'An order was placed.');
+
+$client->eventTypes->update($type->id, ['description' => 'An order was placed at checkout.']);
+$client->eventTypes->archive($type->id);
+$client->eventTypes->unarchive($type->id);
+```
+
+## Lists
+
+`list()` returns one page, and its `nextCursor` asks for the next one. `all()` goes through every page, requesting each one only when the loop reaches it:
+
+```php
+$page = $client->endpoints->list(pageSize: 50);
+$page->data;       // Endpoint objects
+$page->hasMore;    // true when another page follows
+$next = $client->endpoints->list(pageSize: 50, cursor: $page->nextCursor);
+
+foreach ($client->endpoints->all() as $endpoint) {
+    // ...
+}
+```
+
+Subscriptions and event types are listed the same way; the signing secrets of an endpoint come as a plain array.
 
 ## Handling errors
 
@@ -85,7 +153,7 @@ use IngestVault\Exception\ServerException;
 use IngestVault\Exception\ValidationException;
 
 try {
-    $client->sendEvent('order.created', $payload);
+    $client->events->send('order.created', $payload);
 } catch (ValidationException $e) {
     $e->errors;      // ['type' => ['The type format is invalid.']]
 } catch (RateLimitedException | QuotaExceededException $e) {
@@ -100,7 +168,9 @@ try {
     // 5xx or no answer, after the retries ran out
 } catch (ApiException $e) {
     $e->status;      // 403
-    $e->problemCode; // a code this client does not know yet
+    $e->problemCode; // a code this client does not know yet, or another
+                     // code such as 'archived_name_conflict' (409, creating an
+                     // event type whose name an archived type holds)
     $e->getMessage();
 }
 ```

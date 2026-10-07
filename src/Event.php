@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace IngestVault;
 
-use IngestVault\Exception\ApiException;
-use Psr\Http\Message\ResponseInterface;
-
 final readonly class Event
 {
     public function __construct(
@@ -19,25 +16,19 @@ final readonly class Event
 
     /**
      * @internal
+     *
+     * @param array<mixed> $item
      */
-    public static function fromResponse(ResponseInterface $response): self
+    public static function fromArray(array $item): ?self
     {
-        $body = json_decode((string) $response->getBody(), true);
-        $body = is_array($body) ? $body : [];
+        $id = $item['id'] ?? null;
+        $type = $item['type'] ?? null;
+        $typeRegistrationStatus = $item['type_registration_status'] ?? null;
+        $receivedAt = Timestamp::parse($item['received_at'] ?? null);
+        $idempotent = $item['idempotent'] ?? null;
 
-        $id = $body['id'] ?? null;
-        $type = $body['type'] ?? null;
-        $typeRegistrationStatus = $body['type_registration_status'] ?? null;
-        $receivedAt = is_string($body['received_at'] ?? null)
-            ? \DateTimeImmutable::createFromFormat(\DateTimeInterface::RFC3339, $body['received_at'])
-            : false;
-        $idempotent = $body['idempotent'] ?? null;
-
-        if (! is_string($id) || ! is_string($type) || ! is_string($typeRegistrationStatus) || $receivedAt === false || ! is_bool($idempotent)) {
-            throw new ApiException(
-                sprintf('The API answered with HTTP %d but the body is not an event.', $response->getStatusCode()),
-                $response->getStatusCode(),
-            );
+        if (! is_string($id) || ! is_string($type) || ! is_string($typeRegistrationStatus) || $receivedAt === null || ! is_bool($idempotent)) {
+            return null;
         }
 
         return new self($id, $type, $typeRegistrationStatus, $receivedAt, $idempotent);

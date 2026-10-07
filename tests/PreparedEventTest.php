@@ -16,7 +16,7 @@ final class PreparedEventTest extends TestCase
 
         $later = unserialize($queued);
         $this->assertInstanceOf(PreparedEvent::class, $later);
-        $this->client([self::eventResponse()])->sendPreparedEvent($later);
+        $this->client([self::eventResponse()])->events->sendPrepared($later);
 
         $this->assertSame($prepared->idempotencyKey, $this->sentHeader(0, 'Idempotency-Key'));
         $this->assertSame($prepared->body, (string) $this->history[0]['request']->getBody());

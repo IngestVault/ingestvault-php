@@ -44,19 +44,23 @@ final class ApiKeyTest extends TestCase
     }
 
     #[DataProvider('failures')]
-    public function test_the_key_is_absent_from_errors(Response|\Throwable $answer): void
+    public function test_the_key_is_absent_from_errors(Response|\Throwable $answer, string $operation): void
     {
         $client = $this->client([$answer], retries: 0, apiKey: self::KEY);
 
         try {
-            $client->sendEvent('order.created', ['order' => 1042]);
+            // Called inline, not through a closure, so no frame of this test receives the client and its mock handler.
+            match ($operation) {
+                'send an event' => $client->events->send('order.created', ['order' => 1042]),
+                'get an endpoint' => $client->endpoints->get('ep-trace-argument'),
+            };
             $this->fail('Expected an IngestVaultException.');
         } catch (IngestVaultException $e) {
             // The request history belongs to this test, not the SDK; clear it so only the exception is inspected.
             $this->history = [];
             $printed = print_r($e, true);
 
-            $this->assertStringContainsString('order.created', $printed, 'trace arguments are included');
+            $this->assertStringContainsString($operation === 'get an endpoint' ? 'ep-trace-argument' : 'order.created', $printed, 'trace arguments are included');
             $this->assertStringNotContainsString(self::KEY, $e->getMessage());
             $this->assertStringNotContainsString(self::KEY, (string) $e);
             $this->assertStringNotContainsString(self::KEY, $printed);
@@ -65,13 +69,14 @@ final class ApiKeyTest extends TestCase
     }
 
     /**
-     * @return iterable<string, array{Response|\Throwable}>
+     * @return iterable<string, array{Response|\Throwable, string}>
      */
     public static function failures(): iterable
     {
-        yield 'authentication failure' => [self::problemResponse(401, 'unauthenticated', 'The API key is invalid.')];
-        yield 'server error' => [self::problemResponse(500, 'internal_error', 'Something went wrong.')];
-        yield 'network failure' => [new ConnectException('Could not resolve host', new Request('POST', 'events'))];
+        yield 'authentication failure' => [self::problemResponse(401, 'unauthenticated', 'The API key is invalid.'), 'send an event'];
+        yield 'server error' => [self::problemResponse(500, 'internal_error', 'Something went wrong.'), 'send an event'];
+        yield 'network failure' => [new ConnectException('Could not resolve host', new Request('POST', 'events')), 'send an event'];
+        yield 'network failure reading an endpoint' => [new ConnectException('Could not resolve host', new Request('GET', 'endpoints')), 'get an endpoint'];
     }
 
     public function test_a_key_that_cannot_be_a_header_value_fails_without_showing_it(): void
@@ -94,7 +99,7 @@ final class ApiKeyTest extends TestCase
         $client = $this->client([self::eventResponse()], retries: 0, apiKey: self::KEY);
 
         try {
-            $client->sendEvent('order.created', null, "order-1042\n");
+            $client->events->send('order.created', null, "order-1042\n");
             $this->fail('Expected an InvalidArgumentException.');
         } catch (\InvalidArgumentException $e) {
             $this->history = [];

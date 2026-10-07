@@ -14,7 +14,7 @@ final class SendEventTest extends TestCase
     {
         $client = $this->client([self::eventResponse()], apiKey: 'ivk_abc', baseUrl: 'https://api.example.test/v1/');
 
-        $client->sendEvent('order.created', ['order' => 1042, 'url' => 'https://shop.example/é'], 'order-1042');
+        $client->events->send('order.created', ['order' => 1042, 'url' => 'https://shop.example/é'], 'order-1042');
 
         $this->assertCount(1, $this->history);
         $request = $this->history[0]['request'];
@@ -39,7 +39,7 @@ final class SendEventTest extends TestCase
 
     public function test_returns_the_event_from_the_answer(): void
     {
-        $event = $this->client([self::eventResponse()])->sendEvent('order.created', ['order' => 1042]);
+        $event = $this->client([self::eventResponse()])->events->send('order.created', ['order' => 1042]);
 
         $this->assertSame('0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d', $event->id);
         $this->assertSame('order.created', $event->type);
@@ -51,7 +51,7 @@ final class SendEventTest extends TestCase
     public function test_an_unregistered_type_is_returned_not_raised(): void
     {
         $event = $this->client([self::eventResponse(overrides: ['type' => 'order.shipped', 'type_registration_status' => 'unregistered'])])
-            ->sendEvent('order.shipped');
+            ->events->send('order.shipped');
 
         $this->assertSame('unregistered', $event->typeRegistrationStatus);
     }
@@ -60,8 +60,8 @@ final class SendEventTest extends TestCase
     {
         $client = $this->client([self::eventResponse(201), self::eventResponse(200)]);
 
-        $first = $client->sendEvent('order.created', ['order' => 1042], 'order-1042');
-        $repeat = $client->sendEvent('order.created', ['order' => 1042], 'order-1042');
+        $first = $client->events->send('order.created', ['order' => 1042], 'order-1042');
+        $repeat = $client->events->send('order.created', ['order' => 1042], 'order-1042');
 
         $this->assertSame($first->id, $repeat->id);
         $this->assertFalse($first->idempotent);
@@ -74,8 +74,8 @@ final class SendEventTest extends TestCase
     {
         $client = $this->client([self::eventResponse(), self::eventResponse()]);
 
-        $client->sendEvent('order.created');
-        $client->sendEvent('order.created');
+        $client->events->send('order.created');
+        $client->events->send('order.created');
 
         $this->assertNotSame('', $this->sentHeader(0, 'Idempotency-Key'));
         $this->assertNotSame($this->sentHeader(0, 'Idempotency-Key'), $this->sentHeader(1, 'Idempotency-Key'));
@@ -86,7 +86,7 @@ final class SendEventTest extends TestCase
         $event = $this->client([self::eventResponse(overrides: [
             'type_registration_status' => 'pending_review',
             'source' => ['kind' => 'sdk'],
-        ])])->sendEvent('order.created');
+        ])])->events->send('order.created');
 
         $this->assertSame('pending_review', $event->typeRegistrationStatus);
     }
@@ -102,7 +102,7 @@ final class SendEventTest extends TestCase
         ];
 
         $client = new Client(...$config, httpClient: new GuzzleClient(['handler' => $mock]));
-        $client->sendEvent('order.created');
+        $client->events->send('order.created');
 
         $request = $mock->getLastRequest();
         $this->assertNotNull($request);
@@ -116,7 +116,7 @@ final class SendEventTest extends TestCase
         $mock = new MockHandler([self::eventResponse()]);
         $client = new Client('ivk_test_key', httpClient: new GuzzleClient(['handler' => $mock]));
 
-        $event = $client->sendEvent('order.created', ['order' => 1042]);
+        $event = $client->events->send('order.created', ['order' => 1042]);
 
         $this->assertSame('0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d', $event->id);
         $this->assertCount(0, $mock);

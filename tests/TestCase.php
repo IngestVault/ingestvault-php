@@ -97,6 +97,22 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
     }
 
     /**
+     * @param array<string, mixed> $overrides
+     */
+    protected static function deliveryResponse(int $status = 200, array $overrides = []): Response
+    {
+        return self::jsonResponse($status, self::deliveryWithAttempts($overrides));
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     */
+    protected static function organizationResponse(int $status = 200, array $overrides = []): Response
+    {
+        return self::jsonResponse($status, self::organization($overrides));
+    }
+
+    /**
      * @param list<array<string, mixed>> $items
      */
     protected static function pageResponse(array $items, ?string $nextCursor): Response
@@ -163,6 +179,93 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
             'expires_at' => null,
             'created_at' => '2026-10-01T08:00:00Z',
             'updated_at' => '2026-10-01T08:00:00Z',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    protected static function eventSummary(array $overrides = []): array
+    {
+        return $overrides + [
+            'id' => '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d',
+            'type' => 'order.created',
+            'type_registration_status' => 'registered',
+            'received_at' => '2026-10-05T12:00:00Z',
+            'replay' => false,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    protected static function delivery(array $overrides = []): array
+    {
+        return $overrides + [
+            'id' => '0199b2c4-5555-7a3b-9c4d-5e6f7a8b9c05',
+            'status' => 'retrying',
+            'attempt_count' => 2,
+            'next_attempt_at' => '2026-10-05T12:05:00Z',
+            'event' => ['id' => '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d', 'type' => 'order.created'],
+            'endpoint' => ['id' => '0199b2c4-1111-7a3b-9c4d-5e6f7a8b9c01', 'url' => 'https://hooks.example.test/orders'],
+            'created_at' => '2026-10-05T12:00:01Z',
+            'updated_at' => '2026-10-05T12:01:30Z',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    protected static function deliveryWithAttempts(array $overrides = []): array
+    {
+        return $overrides + self::delivery() + [
+            'payload_state' => 'available',
+            'attempts' => [
+                self::attempt(),
+                self::attempt([
+                    'id' => '0199b2c4-6666-7a3b-9c4d-5e6f7a8b9c07',
+                    'http_status' => null,
+                    'error_classification' => 'timeout',
+                    'duration_ms' => 10000,
+                    'response_body' => null,
+                    'attempted_at' => '2026-10-05T12:01:30Z',
+                ]),
+            ],
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    protected static function attempt(array $overrides = []): array
+    {
+        return $overrides + [
+            'id' => '0199b2c4-6666-7a3b-9c4d-5e6f7a8b9c06',
+            'outcome' => 'failed',
+            'http_status' => 503,
+            'error_classification' => null,
+            'duration_ms' => 182,
+            'response_body' => 'Service Unavailable',
+            'attempted_at' => '2026-10-05T12:00:02Z',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
+    protected static function organization(array $overrides = []): array
+    {
+        return $overrides + [
+            'id' => '0199b2c4-8888-7a3b-9c4d-5e6f7a8b9c08',
+            'name' => 'Acme',
+            'notification_email' => 'ops@acme.example',
+            'created_at' => '2026-09-01T10:00:00Z',
+            'payloads_visible' => false,
         ];
     }
 

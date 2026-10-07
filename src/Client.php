@@ -5,15 +5,17 @@ declare(strict_types=1);
 namespace IngestVault;
 
 use GuzzleHttp\ClientInterface;
+use IngestVault\Resource\Deliveries;
 use IngestVault\Resource\Endpoints;
 use IngestVault\Resource\Events;
 use IngestVault\Resource\EventTypes;
+use IngestVault\Resource\Organization;
 use IngestVault\Resource\SigningSecrets;
 use IngestVault\Resource\Subscriptions;
 
 final class Client
 {
-    public const VERSION = '0.2.0';
+    public const VERSION = '0.3.0';
 
     public readonly Events $events;
 
@@ -24,6 +26,10 @@ final class Client
     public readonly Subscriptions $subscriptions;
 
     public readonly EventTypes $eventTypes;
+
+    public readonly Deliveries $deliveries;
+
+    public readonly Organization $organization;
 
     public function __construct(
         #[\SensitiveParameter]
@@ -54,5 +60,7 @@ final class Client
         $this->signingSecrets = new SigningSecrets($transport);
         $this->subscriptions = new Subscriptions($transport);
         $this->eventTypes = new EventTypes($transport);
+        $this->deliveries = new Deliveries($transport);
+        $this->organization = new Organization($transport);
     }
 }

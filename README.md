@@ -1,6 +1,6 @@
 # IngestVault PHP
 
-The PHP client for the IngestVault API. It sends events to IngestVault, which stores them and delivers them to your endpoints as webhooks, and configures the endpoints, subscriptions and event types that decide where they go. It needs PHP 8.2 or newer and works with any framework.
+The PHP client for the IngestVault API. It sends events to IngestVault, which stores them and delivers them to your endpoints as webhooks, configures the endpoints, subscriptions and event types that decide where they go, and reads and replays the events and deliveries that resulted. It needs PHP 8.2 or newer and works with any framework.
 
 ## Installation
 
@@ -57,6 +57,8 @@ $event = $client->events->send('order.created', ['order' => 1042], 'order-create
 Sending the same type and payload again with the same key within 24 hours returns the original event, with `idempotent` set to `true`. Reusing a key with a different payload throws an `IdempotencyConflictException`.
 
 Network failures and 5xx answers are retried, up to `retries` times, after a pause of 250 ms before the first retry and 500 ms before the second. Every retry sends the same key, so a retry never creates a second event. Nothing else is retried. A 429 is thrown straight away with the wait time from `Retry-After`; the client never sleeps on it, so you decide when to try again.
+
+Replays carry a key too, generated unless you pass one, and are retried the same way, so a retried replay never creates a second event. Replays and sends share one key space: a key you used for a send must not be reused for a replay, nor the other way round.
 
 Creating an endpoint, a subscription or an event type and rotating a signing secret are never retried: they carry no idempotency key, and a request whose answer was lost may still have succeeded. Every other operation is retried like a send, up to `retries` times. A retried delete whose first try went through answers 404; treat a 404 on delete as deleted if that suits you.
 
@@ -120,6 +122,69 @@ $client->eventTypes->archive($type->id);
 $client->eventTypes->unarchive($type->id);
 ```
 
+## Events
+
+```php
+$page = $client->events->list(type: 'order.created', typeRegistrationStatus: 'unregistered');
+
+foreach ($client->events->all(receivedAfter: '2026-10-05T12:00:00Z', replay: false) as $summary) {
+    $summary->id;
+}
+
+$event = $client->events->get($summary->id);
+
+$event->payload;      // ['order' => 1042, 'total' => 99.5]
+$event->payloadJson;  // '{"order":1042,"total":99.5}'
+$event->payloadState; // 'available' or 'expired'
+```
+
+List rows carry no payload; `get()` returns the full event. The payload comes in two forms: `payload` is decoded with PHP arrays, and `payloadJson` is the JSON text exactly as the API sent it, for when the difference between `{}` and `[]`, the formatting of a number such as `1.0`, or a large integer matters. Once the payload has expired, `payloadState` is `'expired'` and both forms are `null`.
+
+A replay creates a new event with the same type and payload, delivered to the endpoints whose subscriptions match it now:
+
+```php
+$replayed = $client->events->replay($event->id);
+$replayed = $client->events->replay($event->id, 'replay-order-1042');
+
+$replayed->replay;      // true
+$replayed->rootEventId; // the original event's id
+$replayed->idempotent;  // true when this answer repeats an earlier replay with the same key
+```
+
+On a replayed event `initiator` tells who started the replay; it is `null` on original events.
+
+## Deliveries
+
+```php
+foreach ($client->deliveries->all(status: 'failed') as $delivery) {
+    $delivery->endpointUrl;
+    $delivery->attemptCount;
+}
+
+$delivery = $client->deliveries->get($delivery->id);
+
+foreach ($delivery->attempts as $attempt) {
+    $attempt->httpStatus;          // 503, or null when no answer arrived
+    $attempt->errorClassification; // 'timeout' and the like, or null when an answer arrived
+    $attempt->responseBody;        // null once the payload has expired
+}
+
+$replayed = $client->deliveries->replay($delivery->id);
+```
+
+A delivery replay creates a new event too, delivered to that delivery's endpoint only. It is refused with a `ValidationException` while the delivery is still pending or retrying, or when the endpoint is disabled.
+
+## Organization
+
+```php
+$organization = $client->organization->current();
+
+$organization->name;
+$organization->notificationEmail;
+```
+
+`current()` reads the organization the API key belongs to.
+
 ## Lists
 
 `list()` returns one page, and its `nextCursor` asks for the next one. `all()` goes through every page, requesting each one only when the loop reaches it:
@@ -135,7 +200,7 @@ foreach ($client->endpoints->all() as $endpoint) {
 }
 ```
 
-Subscriptions and event types are listed the same way; the signing secrets of an endpoint come as a plain array.
+Subscriptions, event types, events and deliveries are listed the same way; the signing secrets of an endpoint come as a plain array. Filters on events and deliveries are sent as given on every page, and timestamps are written as `2026-10-05T12:00:00Z`; the API answers a value it cannot use with a `ValidationException`.
 
 ## Handling errors
 
@@ -170,7 +235,8 @@ try {
     $e->status;      // 403
     $e->problemCode; // a code this client does not know yet, or another
                      // code such as 'archived_name_conflict' (409, creating an
-                     // event type whose name an archived type holds)
+                     // event type whose name an archived type holds) or
+                     // 'payload_expired' (409, replaying an expired event)
     $e->getMessage();
 }
 ```
@@ -194,8 +260,11 @@ $mock = new MockHandler([
         'id' => '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d',
         'type' => 'order.created',
         'type_registration_status' => 'registered',
+        'payload' => ['order' => 1042],
+        'payload_state' => 'available',
         'received_at' => '2026-10-05T12:00:00Z',
         'idempotent' => false,
+        'replay' => false,
     ])),
 ]);
 

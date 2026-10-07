@@ -165,6 +165,54 @@ final class PaginationTest extends TestCase
             static fn(array $overrides): array => self::eventType($overrides),
             'https://api.example.test/v1/event-types',
         ];
+        yield 'events' => [
+            static fn(Client $client): \Generator => $client->events->all(),
+            static fn(array $overrides): array => self::eventSummary($overrides),
+            'https://api.example.test/v1/events',
+        ];
+        yield 'deliveries' => [
+            static fn(Client $client): \Generator => $client->deliveries->all(),
+            static fn(array $overrides): array => self::delivery($overrides),
+            'https://api.example.test/v1/deliveries',
+        ];
+    }
+
+    /**
+     * @param \Closure(Client): \Generator<int, object> $all
+     * @param \Closure(array<string, mixed>): array<string, mixed> $item
+     */
+    #[DataProvider('filteredLists')]
+    public function test_all_sends_the_same_filters_on_every_page(\Closure $all, \Closure $item, string $uri, string $filters): void
+    {
+        $client = $this->client([
+            self::pageResponse([$item(['id' => 'a'])], 'cursor-2'),
+            self::pageResponse([$item(['id' => 'b'])], null),
+        ]);
+
+        $this->assertCount(2, iterator_to_array($all($client)));
+
+        $this->assertCount(2, $this->history);
+        $this->assertSame($uri . '?' . $filters, $this->sentUri(0));
+        $this->assertSame($uri . '?cursor=cursor-2&' . $filters, $this->sentUri(1));
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(Client): \Generator<int, object>, \Closure(array<string, mixed>): array<string, mixed>, string, string}>
+     */
+    public static function filteredLists(): iterable
+    {
+        yield 'events by type, originals only' => [
+            static fn(Client $client): \Generator => $client->events->all(type: 'order.created', replay: false),
+            static fn(array $overrides): array => self::eventSummary($overrides),
+            'https://api.example.test/v1/events',
+            'type=order.created&replay=false',
+        ];
+        yield 'deliveries by status' => [
+            static fn(Client $client): \Generator => $client->deliveries->all(status: 'failed'),
+            static fn(array $overrides): array => self::delivery($overrides),
+            'https://api.example.test/v1/deliveries',
+            'status=failed',
+        ];
     }
 
     /**

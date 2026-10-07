@@ -44,8 +44,14 @@ final class SendEventTest extends TestCase
         $this->assertSame('0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d', $event->id);
         $this->assertSame('order.created', $event->type);
         $this->assertSame('registered', $event->typeRegistrationStatus);
+        $this->assertSame(['order' => 1042], $event->payload);
+        $this->assertSame('{"order":1042}', $event->payloadJson);
+        $this->assertSame('available', $event->payloadState);
         $this->assertEquals(new \DateTimeImmutable('2026-10-05T12:00:00Z'), $event->receivedAt);
         $this->assertFalse($event->idempotent);
+        $this->assertFalse($event->replay);
+        $this->assertNull($event->rootEventId);
+        $this->assertNull($event->initiator);
     }
 
     public function test_an_unregistered_type_is_returned_not_raised(): void

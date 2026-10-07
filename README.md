@@ -44,7 +44,19 @@ $event->receivedAt;             // DateTimeImmutable
 $event->idempotent;             // true when this answer repeats an earlier send
 ```
 
-The payload can be any value that encodes as JSON, or left out. An event whose type is not registered, or is archived, is still accepted: `typeRegistrationStatus` reports it, and no exception is thrown. The API checks the type name and the payload size; the client sends what it is given.
+The payload can be any value that encodes as JSON, or left out:
+
+```php
+use IngestVault\RawJson;
+
+$client->events->send('order.created');       // no payload
+$client->events->send('order.created', null); // the payload null
+$client->events->send('order.created', new RawJson('{"ratio": 1.0, "big": 123456789012345678901234567890}'));
+```
+
+Leaving the payload out sends an event without one, which is not the same as a payload of `null`. A PHP value is encoded by the client, and `1.0` stays `1.0`. When the exact JSON text matters, pass it as `RawJson`: it is sent byte for byte, and text that is not valid JSON throws an `InvalidArgumentException` before anything is sent.
+
+An event whose type is not registered, or is archived, is still accepted: `typeRegistrationStatus` reports it, and no exception is thrown. The API checks the type name and the payload size; the client sends what it is given.
 
 ## Idempotency and retries
 
@@ -54,7 +66,7 @@ Every send carries an `Idempotency-Key`. Pass your own as the third argument to 
 $event = $client->events->send('order.created', ['order' => 1042], 'order-created-1042');
 ```
 
-Sending the same type and payload again with the same key within 24 hours returns the original event, with `idempotent` set to `true`. Reusing a key with a different payload throws an `IdempotencyConflictException`.
+Sending the same type and payload again with the same key within 24 hours returns the original event, with `idempotent` set to `true`. The API compares the payload byte for byte, so a second send under the same key whose payload was built differently, with the members in another order, an integer that became a float or raw JSON with other whitespace, throws an `IdempotencyConflictException`. A retry of the same send is always safe: its body is fixed once and sent unchanged.
 
 Network failures and 5xx answers are retried, up to `retries` times, after a pause of 250 ms before the first retry and 500 ms before the second. Every retry sends the same key, so a retry never creates a second event. Nothing else is retried. A 429 is thrown straight away with the wait time from `Retry-After`; the client never sleeps on it, so you decide when to try again.
 
@@ -135,10 +147,10 @@ $event = $client->events->get($summary->id);
 
 $event->payload;      // ['order' => 1042, 'total' => 99.5]
 $event->payloadJson;  // '{"order":1042,"total":99.5}'
-$event->payloadState; // 'available' or 'expired'
+$event->payloadState; // 'available', 'expired' or 'none'
 ```
 
-List rows carry no payload; `get()` returns the full event. The payload comes in two forms: `payload` is decoded with PHP arrays, and `payloadJson` is the JSON text exactly as the API sent it, for when the difference between `{}` and `[]`, the formatting of a number such as `1.0`, or a large integer matters. Once the payload has expired, `payloadState` is `'expired'` and both forms are `null`.
+List rows carry no payload; `get()` returns the full event. The payload comes in two forms: `payload` is decoded with PHP arrays, and `payloadJson` is the JSON text exactly as the API sent it, for when the difference between `{}` and `[]`, the formatting of a number such as `1.0`, or a large integer matters. Once the payload has expired, `payloadState` is `'expired'` and both forms are `null`. An event sent without a payload has the state `'none'`, and both forms are `null` as well. A payload of `null` reads differently: `payload` is `null`, `payloadJson` is `'null'` and the state is `'available'`. The state is how to tell a null payload from no payload.
 
 A replay creates a new event with the same type and payload, delivered to the endpoints whose subscriptions match it now:
 
@@ -163,10 +175,12 @@ foreach ($client->deliveries->all(status: 'failed') as $delivery) {
 
 $delivery = $client->deliveries->get($delivery->id);
 
+$delivery->payloadState; // 'available', 'expired' or 'none'
+
 foreach ($delivery->attempts as $attempt) {
     $attempt->httpStatus;          // 503, or null when no answer arrived
     $attempt->errorClassification; // 'timeout' and the like, or null when an answer arrived
-    $attempt->responseBody;        // null once the payload has expired
+    $attempt->responseBody;        // null once the event is past its retention, whatever the payload state
 }
 
 $replayed = $client->deliveries->replay($delivery->id);
@@ -243,7 +257,7 @@ try {
 
 `problemCode` is `null` when an answer carries no problem document, for example an error page from a proxy.
 
-A call the client cannot turn into a request fails with PHP's own exceptions before anything is sent: a payload that cannot be encoded as JSON throws a `JsonException`, and a value that cannot be sent as a header, such as an idempotency key with a line break, throws an `InvalidArgumentException`.
+A call the client cannot turn into a request fails with PHP's own exceptions before anything is sent: a payload that cannot be encoded as JSON throws a `JsonException`, and raw JSON text that is not valid JSON or a value that cannot be sent as a header, such as an idempotency key with a line break, throws an `InvalidArgumentException`.
 
 ## Testing
 

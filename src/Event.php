@@ -7,8 +7,9 @@ namespace IngestVault;
 final readonly class Event
 {
     /**
-     * @param mixed $payload The payload decoded as json_decode() with associative arrays does it; null when expired.
-     * @param ?string $payloadJson The payload exactly as the API sent it, as JSON text; null when expired.
+     * @param mixed $payload The payload decoded as json_decode() with associative arrays does it; null when expired or none.
+     * @param ?string $payloadJson The payload exactly as the API sent it, as JSON text; null when expired or none, 'null' for a null payload.
+     * @param string $payloadState 'available', 'expired' or 'none' (sent without a payload); tells a null payload from no payload.
      */
     public function __construct(
         public string $id,
@@ -53,8 +54,8 @@ final readonly class Event
             }
         }
 
-        // An expired payload is null in the body, which must not read as a stored null.
-        if ($payloadState === 'expired') {
+        // An expired payload and a missing one are null in the body, which must not read as a stored null.
+        if ($payloadState === 'expired' || $payloadState === 'none') {
             $payload = null;
             $payloadJson = null;
         } elseif (array_key_exists('payload', $item) && $payloadJson !== null) {

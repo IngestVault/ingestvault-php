@@ -148,6 +148,16 @@ final class EventsTest extends TestCase
         $this->assertNull($event->payloadJson);
     }
 
+    public function test_an_event_without_a_payload_has_no_payload_in_either_form(): void
+    {
+        $event = $this->client([self::eventResponse(200, ['idempotent' => false, 'payload' => null, 'payload_state' => 'none'])])
+            ->events->get(self::ID);
+
+        $this->assertSame('none', $event->payloadState);
+        $this->assertNull($event->payload);
+        $this->assertNull($event->payloadJson);
+    }
+
     public function test_a_stored_null_payload_reads_null_with_the_text_null(): void
     {
         $event = $this->client([self::eventResponse(200, ['idempotent' => false, 'payload' => null])])->events->get(self::ID);

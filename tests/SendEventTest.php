@@ -7,6 +7,8 @@ namespace IngestVault\Tests;
 use GuzzleHttp\Client as GuzzleClient;
 use GuzzleHttp\Handler\MockHandler;
 use IngestVault\Client;
+use IngestVault\PreparedEvent;
+use IngestVault\RawJson;
 
 final class SendEventTest extends TestCase
 {
@@ -35,6 +37,57 @@ final class SendEventTest extends TestCase
         $this->assertSame(10.0, $options['connect_timeout']);
         $this->assertFalse($options['http_errors']);
         $this->assertFalse($options['allow_redirects']);
+    }
+
+    public function test_a_send_without_a_payload_sends_no_payload_member(): void
+    {
+        $this->client([self::eventResponse()])->events->send('order.created');
+
+        $this->assertSame('{"type":"order.created"}', $this->sentBody(0));
+    }
+
+    public function test_a_null_payload_is_sent_as_null(): void
+    {
+        $this->client([self::eventResponse()])->events->send('order.created', null);
+
+        $this->assertSame('{"type":"order.created","payload":null}', $this->sentBody(0));
+    }
+
+    public function test_a_raw_json_payload_is_sent_as_given(): void
+    {
+        $text = '{ "ratio": 1.0, "e": 1.5e3, "big": 123456789012345678901234567890, "a": 1, "a": 2 }';
+
+        $this->client([self::eventResponse()])->events->send('order.created', new RawJson($text));
+
+        $this->assertSame('{"type":"order.created","payload":' . $text . '}', $this->sentBody(0));
+    }
+
+    public function test_an_invalid_raw_json_payload_makes_no_request(): void
+    {
+        $client = $this->client([self::eventResponse()]);
+
+        try {
+            $client->events->send('order.created', new RawJson('{"order": 1042'));
+            $this->fail('Expected an InvalidArgumentException.');
+        } catch (\InvalidArgumentException $e) {
+            $this->assertSame('The payload is not valid JSON.', $e->getMessage());
+        }
+
+        $this->assertCount(0, $this->history);
+    }
+
+    public function test_a_prepared_send_without_a_payload_sends_no_payload_member(): void
+    {
+        $this->client([self::eventResponse()])->events->sendPrepared(new PreparedEvent('order.created'));
+
+        $this->assertSame('{"type":"order.created"}', $this->sentBody(0));
+    }
+
+    public function test_a_prepared_send_with_a_null_payload_sends_null(): void
+    {
+        $this->client([self::eventResponse()])->events->sendPrepared(new PreparedEvent('order.created', null));
+
+        $this->assertSame('{"type":"order.created","payload":null}', $this->sentBody(0));
     }
 
     public function test_returns_the_event_from_the_answer(): void

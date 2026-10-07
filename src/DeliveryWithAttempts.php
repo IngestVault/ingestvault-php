@@ -7,6 +7,7 @@ namespace IngestVault;
 final readonly class DeliveryWithAttempts
 {
     /**
+     * @param string $payloadState 'available', 'expired' or 'none' (the event was sent without a payload).
      * @param list<DeliveryAttempt> $attempts In the order they were made.
      */
     public function __construct(

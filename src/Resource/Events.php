@@ -8,6 +8,7 @@ use IngestVault\Event;
 use IngestVault\EventSummary;
 use IngestVault\IdempotencyKey;
 use IngestVault\Page;
+use IngestVault\Payload;
 use IngestVault\PreparedEvent;
 
 final class Events extends Group
@@ -15,7 +16,7 @@ final class Events extends Group
     /**
      * @throws \JsonException When the payload cannot be encoded as JSON.
      */
-    public function send(string $type, mixed $payload = null, ?string $idempotencyKey = null): Event
+    public function send(string $type, mixed $payload = Payload::None, ?string $idempotencyKey = null): Event
     {
         return $this->sendPrepared(new PreparedEvent($type, $payload, $idempotencyKey));
     }

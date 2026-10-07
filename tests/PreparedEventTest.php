@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace IngestVault\Tests;
 
+use IngestVault\Payload;
 use IngestVault\PreparedEvent;
+use IngestVault\RawJson;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 final class PreparedEventTest extends TestCase
@@ -34,10 +36,34 @@ final class PreparedEventTest extends TestCase
         $this->assertMatchesRegularExpression('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/', $key);
     }
 
-    public function test_an_absent_and_a_null_payload_give_the_same_body(): void
+    public function test_a_send_without_a_payload_has_no_payload_member(): void
     {
-        $this->assertSame('{"type":"order.created","payload":null}', (new PreparedEvent('order.created'))->body);
+        $this->assertSame('{"type":"order.created"}', (new PreparedEvent('order.created'))->body);
+        $this->assertSame('{"type":"order.created"}', (new PreparedEvent('order.created', Payload::None))->body);
+    }
+
+    public function test_a_null_payload_is_sent_as_null(): void
+    {
         $this->assertSame('{"type":"order.created","payload":null}', (new PreparedEvent('order.created', null))->body);
+    }
+
+    public function test_raw_json_is_sent_byte_for_byte(): void
+    {
+        $text = '{ "ratio": 1.0, "e": 1.5e3, "big": 123456789012345678901234567890, "a": 1, "a": 2 }';
+
+        $this->assertSame('{"type":"order.created","payload":' . $text . '}', (new PreparedEvent('order.created', new RawJson($text)))->body);
+        $this->assertSame("{\"type\":\"order.created\",\"payload\": \n[1, 2]\t}", (new PreparedEvent('order.created', new RawJson(" \n[1, 2]\t")))->body);
+    }
+
+    public function test_the_body_is_fixed_when_prepared(): void
+    {
+        $payload = new \stdClass();
+        $payload->order = 1042;
+        $prepared = new PreparedEvent('order.created', $payload);
+
+        $payload->order = 1043;
+
+        $this->assertSame('{"type":"order.created","payload":{"order":1042}}', $prepared->body);
     }
 
     #[DataProvider('payloads')]

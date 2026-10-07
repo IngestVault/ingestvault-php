@@ -137,6 +137,19 @@ final class DeliveriesTest extends TestCase
         $this->assertNull($second->responseBody);
     }
 
+    public function test_a_delivery_of_an_event_without_a_payload_reports_the_state(): void
+    {
+        $delivery = $this->client([self::deliveryResponse(overrides: [
+            'payload_state' => 'none',
+            'attempts' => [self::attempt()],
+        ])])->deliveries->get(self::ID);
+
+        $this->assertSame('none', $delivery->payloadState);
+        $this->assertCount(1, $delivery->attempts);
+        $this->assertSame('failed', $delivery->attempts[0]->outcome);
+        $this->assertSame('Service Unavailable', $delivery->attempts[0]->responseBody);
+    }
+
     public function test_the_deliveries_of_a_page_are_read(): void
     {
         $page = $this->client([self::pageResponse([

@@ -188,6 +188,11 @@ final class RetryTest extends TestCase
         yield 'update an event type' => [static fn(Client $client): mixed => $client->eventTypes->update($id, ['description' => null]), $eventType];
         yield 'archive an event type' => [static fn(Client $client): mixed => $client->eventTypes->archive($id), $eventType];
         yield 'unarchive an event type' => [static fn(Client $client): mixed => $client->eventTypes->unarchive($id), $eventType];
+        yield 'list events' => [static fn(Client $client): mixed => $client->events->list(type: 'order.created'), static fn(): Response => self::pageResponse([self::eventSummary()], null)];
+        yield 'get an event' => [static fn(Client $client): mixed => $client->events->get($id), static fn(): Response => self::eventResponse(200, ['idempotent' => false])];
+        yield 'list deliveries' => [static fn(Client $client): mixed => $client->deliveries->list(status: 'failed'), static fn(): Response => self::pageResponse([self::delivery()], null)];
+        yield 'get a delivery' => [static fn(Client $client): mixed => $client->deliveries->get($id), static fn(): Response => self::deliveryResponse()];
+        yield 'read the current organization' => [static fn(Client $client): mixed => $client->organization->current(), static fn(): Response => self::organizationResponse()];
     }
 
     /**

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace IngestVault\Resource;
 
+use IngestVault\Event;
 use IngestVault\Exception\ApiException;
+use IngestVault\Json;
 use IngestVault\Page;
 use IngestVault\Transport;
 use Psr\Http\Message\ResponseInterface;
@@ -35,6 +37,15 @@ abstract class Group
     protected static function item(ResponseInterface $response, callable $fromArray, string $noun): object
     {
         return $fromArray(self::body($response)) ?? throw self::unreadable($response, $noun);
+    }
+
+    protected static function event(ResponseInterface $response): Event
+    {
+        $json = (string) $response->getBody();
+        $body = json_decode($json, true);
+
+        return Event::fromArray(is_array($body) ? $body : [], Json::member($json, 'payload'))
+            ?? throw self::unreadable($response, 'an event');
     }
 
     /**

@@ -147,7 +147,7 @@ final class ErrorsTest extends TestCase
     /**
      * @return iterable<string, array{\Closure(Client): mixed}>
      */
-    public static function configurationOperations(): iterable
+    public static function operations(): iterable
     {
         yield from self::operationsOnAnExistingResource();
         yield 'list endpoints' => [static fn(Client $client): mixed => $client->endpoints->list()];
@@ -155,6 +155,11 @@ final class ErrorsTest extends TestCase
         yield 'create a subscription' => [static fn(Client $client): mixed => $client->subscriptions->create(self::ID, ['order.created'])];
         yield 'list event types' => [static fn(Client $client): mixed => $client->eventTypes->list()];
         yield 'create an event type' => [static fn(Client $client): mixed => $client->eventTypes->create('order.created')];
+        yield 'list events' => [static fn(Client $client): mixed => $client->events->list()];
+        yield 'replay an event' => [static fn(Client $client): mixed => $client->events->replay(self::ID)];
+        yield 'list deliveries' => [static fn(Client $client): mixed => $client->deliveries->list()];
+        yield 'replay a delivery' => [static fn(Client $client): mixed => $client->deliveries->replay(self::ID)];
+        yield 'read the current organization' => [static fn(Client $client): mixed => $client->organization->current()];
     }
 
     /**
@@ -175,6 +180,8 @@ final class ErrorsTest extends TestCase
         yield 'update an event type' => [static fn(Client $client): mixed => $client->eventTypes->update(self::ID, ['description' => 'Placed.'])];
         yield 'archive an event type' => [static fn(Client $client): mixed => $client->eventTypes->archive(self::ID)];
         yield 'unarchive an event type' => [static fn(Client $client): mixed => $client->eventTypes->unarchive(self::ID)];
+        yield 'get an event' => [static fn(Client $client): mixed => $client->events->get(self::ID)];
+        yield 'get a delivery' => [static fn(Client $client): mixed => $client->deliveries->get(self::ID)];
     }
 
     /**
@@ -222,8 +229,33 @@ final class ErrorsTest extends TestCase
     /**
      * @param \Closure(Client): mixed $call
      */
-    #[DataProvider('configurationOperations')]
-    public function test_a_401_on_a_configuration_operation_raises_an_authentication_error(\Closure $call): void
+    #[DataProvider('filteredLists')]
+    public function test_a_422_on_a_list_with_a_bad_filter_raises_a_validation_error_with_the_field_errors_as_received(\Closure $call, string $field): void
+    {
+        $errors = [$field => ['The ' . $field . ' field is invalid.']];
+
+        $e = $this->raisedBy($call, self::problemResponse(422, 'validation_failed', 'The given data was invalid.', ['errors' => $errors]));
+
+        $this->assertInstanceOf(ValidationException::class, $e);
+        $this->assertSame(422, $e->status);
+        $this->assertSame('validation_failed', $e->problemCode);
+        $this->assertSame($errors, $e->errors);
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(Client): mixed, string}>
+     */
+    public static function filteredLists(): iterable
+    {
+        yield 'events by a malformed type' => [static fn(Client $client): mixed => $client->events->list(type: 'Order'), 'type'];
+        yield 'deliveries by an unknown status' => [static fn(Client $client): mixed => $client->deliveries->list(status: 'lost'), 'status'];
+    }
+
+    /**
+     * @param \Closure(Client): mixed $call
+     */
+    #[DataProvider('operations')]
+    public function test_a_401_on_any_operation_raises_an_authentication_error(\Closure $call): void
     {
         $e = $this->raisedBy($call, self::problemResponse(401, 'unauthenticated', 'The API key is invalid.'));
 
@@ -234,8 +266,8 @@ final class ErrorsTest extends TestCase
     /**
      * @param \Closure(Client): mixed $call
      */
-    #[DataProvider('configurationOperations')]
-    public function test_a_500_on_a_configuration_operation_raises_a_server_error(\Closure $call): void
+    #[DataProvider('operations')]
+    public function test_a_500_on_any_operation_raises_a_server_error(\Closure $call): void
     {
         $e = $this->raisedBy($call, self::problemResponse(500, 'internal_error', 'Something went wrong.'));
 
@@ -293,6 +325,20 @@ final class ErrorsTest extends TestCase
         yield 'item without an id on list' => [$list, $json(['data' => [$withoutId(self::endpoint())], 'has_more' => false, 'next_cursor' => null]), 'The API answered with HTTP 200 but the body is not a page of endpoints.'];
         yield 'page without has_more on list' => [$list, $json(['data' => [], 'next_cursor' => null]), 'The API answered with HTTP 200 but the body is not a page of endpoints.'];
         yield 'html on signing secrets' => [$secrets, clone $html, "The API answered with HTTP 200 but the body is not the endpoint's signing secrets."];
+        $event = static fn(Client $client): mixed => $client->events->get(self::ID);
+        $delivery = static fn(Client $client): mixed => $client->deliveries->get(self::ID);
+        $organization = static fn(Client $client): mixed => $client->organization->current();
+        $withoutPayload = self::eventSummary(['payload_state' => 'available', 'idempotent' => false]);
+        $withAnUnreadableAttempt = self::deliveryWithAttempts(['attempts' => [$withoutId(self::attempt())]]);
+
+        yield 'html on get event' => [$event, clone $html, 'The API answered with HTTP 200 but the body is not an event.'];
+        yield 'event without a payload on get event' => [$event, $json($withoutPayload), 'The API answered with HTTP 200 but the body is not an event.'];
+        yield 'event with an unreadable initiator on get event' => [$event, $json($withoutPayload + ['payload' => null, 'initiator' => ['id' => 'k1']]), 'The API answered with HTTP 200 but the body is not an event.'];
+        yield 'html on get delivery' => [$delivery, clone $html, 'The API answered with HTTP 200 but the body is not a delivery.'];
+        yield 'delivery with an unreadable attempt on get delivery' => [$delivery, $json($withAnUnreadableAttempt), 'The API answered with HTTP 200 but the body is not a delivery.'];
+        yield 'delivery without next_attempt_at on get delivery' => [$delivery, $json(array_diff_key(self::deliveryWithAttempts(), ['next_attempt_at' => true])), 'The API answered with HTTP 200 but the body is not a delivery.'];
+        yield 'html on the organization' => [$organization, clone $html, 'The API answered with HTTP 200 but the body is not an organization.'];
+        yield 'organization without an id' => [$organization, $json($withoutId(self::organization())), 'The API answered with HTTP 200 but the body is not an organization.'];
         yield 'item without an id on signing secrets' => [$secrets, $json(['data' => [$withoutId(self::signingSecret())]]), "The API answered with HTTP 200 but the body is not the endpoint's signing secrets."];
     }
 

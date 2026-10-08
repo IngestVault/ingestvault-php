@@ -20,6 +20,8 @@ final class ErrorsTest extends TestCase
 {
     private const ID = '0199b2c4-1111-7a3b-9c4d-5e6f7a8b9c01';
 
+    private const REQUEST_ID = 'req_3f9a1c2b7d4e8f6051a2b3c4d5e6f708';
+
     private function raised(Response $response): ApiException
     {
         try {
@@ -94,6 +96,7 @@ final class ErrorsTest extends TestCase
         $this->assertSame($status, $e->status);
         $this->assertNull($e->problemCode);
         $this->assertSame(sprintf('The API answered with HTTP %d.', $status), $e->getMessage());
+        $this->assertNull($e->requestId);
     }
 
     /**
@@ -105,6 +108,39 @@ final class ErrorsTest extends TestCase
         yield 'body too large at the proxy' => [413, PayloadTooLargeException::class];
     }
 
+    /**
+     * @param class-string<ApiException> $class
+     */
+    #[DataProvider('errorsWithARequestId')]
+    public function test_an_error_carries_the_request_id_from_the_header_and_ends_its_message_with_it(int $status, string $code, string $class): void
+    {
+        $e = $this->raised(self::problemResponse($status, $code, 'Refused.')->withHeader('Request-Id', self::REQUEST_ID));
+
+        $this->assertInstanceOf($class, $e);
+        $this->assertSame(self::REQUEST_ID, $e->requestId);
+        $this->assertTrue(str_ends_with($e->getMessage(), ' (request ' . self::REQUEST_ID . ')'), $e->getMessage());
+    }
+
+    /**
+     * @return iterable<string, array{int, string, class-string<ApiException>}>
+     */
+    public static function errorsWithARequestId(): iterable
+    {
+        yield 'validation failure' => [422, 'validation_failed', ValidationException::class];
+        yield 'rate limited' => [429, 'rate_limited', RateLimitedException::class];
+        yield 'authentication failure' => [401, 'unauthenticated', AuthenticationException::class];
+        yield 'server error' => [500, 'internal_error', ServerException::class];
+    }
+
+    public function test_an_error_without_the_header_takes_the_request_id_from_the_problem_body(): void
+    {
+        $e = $this->raised(self::problemResponse(500, 'internal_error', 'Something went wrong.', ['request_id' => self::REQUEST_ID]));
+
+        $this->assertInstanceOf(ServerException::class, $e);
+        $this->assertSame(self::REQUEST_ID, $e->requestId);
+        $this->assertSame('Something went wrong. (request ' . self::REQUEST_ID . ')', $e->getMessage());
+    }
+
     public function test_an_unreadable_success_body_raises_a_general_api_error(): void
     {
         $e = $this->raised(new Response(200, ['Content-Type' => 'text/html'], '<html>Welcome</html>'));
@@ -112,6 +148,23 @@ final class ErrorsTest extends TestCase
         $this->assertSame(ApiException::class, $e::class);
         $this->assertSame(200, $e->status);
         $this->assertNull($e->problemCode);
+    }
+
+    public function test_an_error_with_both_the_header_and_the_body_member_takes_the_request_id_from_the_header(): void
+    {
+        $e = $this->raised(self::problemResponse(500, 'internal_error', 'Something went wrong.', ['request_id' => 'req_b'])->withHeader('Request-Id', 'req_a'));
+
+        $this->assertSame('req_a', $e->requestId);
+        $this->assertSame('Something went wrong. (request req_a)', $e->getMessage());
+    }
+
+    public function test_an_unreadable_success_body_carries_the_request_id_of_the_answer(): void
+    {
+        $e = $this->raised(new Response(200, ['Content-Type' => 'text/html', 'Request-Id' => self::REQUEST_ID], '<html>Welcome</html>'));
+
+        $this->assertSame(ApiException::class, $e::class);
+        $this->assertSame(self::REQUEST_ID, $e->requestId);
+        $this->assertTrue(str_ends_with($e->getMessage(), ' (request ' . self::REQUEST_ID . ')'), $e->getMessage());
     }
 
     public function test_a_retry_after_of_zero_is_read_as_zero(): void

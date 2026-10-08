@@ -13,8 +13,9 @@ final class ValidationException extends ApiException
         string $message,
         int $status,
         ?string $problemCode,
+        ?string $requestId,
         public readonly array $errors,
     ) {
-        parent::__construct($message, $status, $problemCode);
+        parent::__construct($message, $status, $problemCode, $requestId);
     }
 }

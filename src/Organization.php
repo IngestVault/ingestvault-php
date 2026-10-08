@@ -12,6 +12,7 @@ final readonly class Organization
         public string $notificationEmail,
         public \DateTimeImmutable $createdAt,
         public bool $payloadsVisible,
+        public ?string $requestId,
     ) {}
 
     /**
@@ -19,7 +20,7 @@ final readonly class Organization
      *
      * @param array<mixed> $item
      */
-    public static function fromArray(array $item): ?self
+    public static function fromArray(array $item, ?string $requestId): ?self
     {
         $id = $item['id'] ?? null;
         $name = $item['name'] ?? null;
@@ -31,6 +32,6 @@ final readonly class Organization
             return null;
         }
 
-        return new self($id, $name, $notificationEmail, $createdAt, $payloadsVisible);
+        return new self($id, $name, $notificationEmail, $createdAt, $payloadsVisible, $requestId);
     }
 }

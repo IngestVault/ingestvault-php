@@ -13,6 +13,7 @@ final readonly class EventType
         public bool $archived,
         public \DateTimeImmutable $createdAt,
         public \DateTimeImmutable $updatedAt,
+        public ?string $requestId,
     ) {}
 
     /**
@@ -20,7 +21,7 @@ final readonly class EventType
      *
      * @param array<mixed> $item
      */
-    public static function fromArray(array $item): ?self
+    public static function fromArray(array $item, ?string $requestId): ?self
     {
         $id = $item['id'] ?? null;
         $name = $item['name'] ?? null;
@@ -34,6 +35,6 @@ final readonly class EventType
             return null;
         }
 
-        return new self($id, $name, $description, $archived, $createdAt, $updatedAt);
+        return new self($id, $name, $description, $archived, $createdAt, $updatedAt, $requestId);
     }
 }

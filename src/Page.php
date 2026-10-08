@@ -16,5 +16,6 @@ final readonly class Page
         public array $data,
         public bool $hasMore,
         public ?string $nextCursor,
+        public ?string $requestId,
     ) {}
 }

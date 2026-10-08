@@ -13,6 +13,7 @@ final readonly class Endpoint
         public bool $enabled,
         public \DateTimeImmutable $createdAt,
         public \DateTimeImmutable $updatedAt,
+        public ?string $requestId,
     ) {}
 
     /**
@@ -20,7 +21,7 @@ final readonly class Endpoint
      *
      * @param array<mixed> $item
      */
-    public static function fromArray(array $item): ?self
+    public static function fromArray(array $item, ?string $requestId): ?self
     {
         $id = $item['id'] ?? null;
         $url = $item['url'] ?? null;
@@ -34,6 +35,6 @@ final readonly class Endpoint
             return null;
         }
 
-        return new self($id, $url, $description, $enabled, $createdAt, $updatedAt);
+        return new self($id, $url, $description, $enabled, $createdAt, $updatedAt, $requestId);
     }
 }

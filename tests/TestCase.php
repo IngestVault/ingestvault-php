@@ -293,7 +293,7 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
     }
 
     /**
-     * Asserts the shape every configuration request shares: no idempotency key, and a JSON content type only with a body.
+     * Asserts the shape every configuration request shares: no idempotency key, no request id, and a JSON content type only with a body.
      */
     protected function assertSentRequest(string $method, string $uri, ?string $body, int $index = 0): void
     {
@@ -305,6 +305,7 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
         $this->assertSame('application/json', $this->sentHeader($index, 'Accept'));
         $this->assertSame('ingestvault-php/' . Client::VERSION, $this->sentHeader($index, 'User-Agent'));
         $this->assertFalse($request->hasHeader('Idempotency-Key'));
+        $this->assertFalse($request->hasHeader('Request-Id'));
         $this->assertSame($body ?? '', $this->sentBody($index));
         $this->assertSame($body === null ? '' : 'application/json', $this->sentHeader($index, 'Content-Type'));
     }

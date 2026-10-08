@@ -23,6 +23,7 @@ final readonly class DeliveryWithAttempts
         public \DateTimeImmutable $updatedAt,
         public string $payloadState,
         public array $attempts,
+        public ?string $requestId,
     ) {}
 
     /**
@@ -30,9 +31,9 @@ final readonly class DeliveryWithAttempts
      *
      * @param array<mixed> $item
      */
-    public static function fromArray(array $item): ?self
+    public static function fromArray(array $item, ?string $requestId): ?self
     {
-        $delivery = Delivery::fromArray($item);
+        $delivery = Delivery::fromArray($item, $requestId);
         $payloadState = $item['payload_state'] ?? null;
         $items = $item['attempts'] ?? null;
 
@@ -62,6 +63,7 @@ final readonly class DeliveryWithAttempts
             $delivery->updatedAt,
             $payloadState,
             $attempts,
+            $requestId,
         );
     }
 }

@@ -65,6 +65,30 @@ final class PaginationTest extends TestCase
         $this->assertSame('https://api.example.test/v1/endpoints?cursor=cursor-3', $this->sentUri(2));
     }
 
+    public function test_items_carry_the_request_id_of_the_page_they_came_from(): void
+    {
+        $client = $this->client([
+            self::pageResponse([self::endpoint(['id' => 'a']), self::endpoint(['id' => 'b'])], 'cursor-2')->withHeader('Request-Id', 'req_a'),
+            self::pageResponse([self::endpoint(['id' => 'c'])], null)->withHeader('Request-Id', 'req_b'),
+        ]);
+
+        $requestIds = [];
+        foreach ($client->endpoints->all() as $endpoint) {
+            $requestIds[$endpoint->id] = $endpoint->requestId;
+        }
+
+        $this->assertSame(['a' => 'req_a', 'b' => 'req_a', 'c' => 'req_b'], $requestIds);
+    }
+
+    public function test_a_page_carries_the_request_id_of_its_answer(): void
+    {
+        $page = $this->client([self::pageResponse([self::endpoint(['id' => 'a'])], null)->withHeader('Request-Id', 'req_3f9a1c2b7d4e8f6051a2b3c4d5e6f708')])
+            ->endpoints->list();
+
+        $this->assertSame('req_3f9a1c2b7d4e8f6051a2b3c4d5e6f708', $page->requestId);
+        $this->assertSame('req_3f9a1c2b7d4e8f6051a2b3c4d5e6f708', $page->data[0]->requestId);
+    }
+
     public function test_all_requests_the_next_page_only_when_its_items_are_needed(): void
     {
         $client = $this->client([

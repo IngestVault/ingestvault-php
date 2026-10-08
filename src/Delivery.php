@@ -17,6 +17,7 @@ final readonly class Delivery
         public string $endpointUrl,
         public \DateTimeImmutable $createdAt,
         public \DateTimeImmutable $updatedAt,
+        public ?string $requestId,
     ) {}
 
     /**
@@ -24,7 +25,7 @@ final readonly class Delivery
      *
      * @param array<mixed> $item
      */
-    public static function fromArray(array $item): ?self
+    public static function fromArray(array $item, ?string $requestId): ?self
     {
         $id = $item['id'] ?? null;
         $status = $item['status'] ?? null;
@@ -49,6 +50,6 @@ final readonly class Delivery
             return null;
         }
 
-        return new self($id, $status, $attemptCount, $nextAttemptAt, $event['id'], $event['type'], $endpoint['id'], $endpoint['url'], $createdAt, $updatedAt);
+        return new self($id, $status, $attemptCount, $nextAttemptAt, $event['id'], $event['type'], $endpoint['id'], $endpoint['url'], $createdAt, $updatedAt, $requestId);
     }
 }

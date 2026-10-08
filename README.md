@@ -29,7 +29,7 @@ $client = new Client(
 
 An API key that is empty, or that contains spaces, control characters or anything outside plain ASCII (such as a trailing newline read from a file), throws an `InvalidArgumentException` before any request is made.
 
-`Client::VERSION` is the version of this client (`'0.4.0'`); every request sends it in the `User-Agent` header as `ingestvault-php/0.4.0`.
+`Client::VERSION` is the version of this client (`'0.5.0'`); every request sends it in the `User-Agent` header as `ingestvault-php/0.5.0`.
 
 ## Sending an event
 
@@ -44,6 +44,7 @@ $event->type;                   // 'order.created'
 $event->typeRegistrationStatus; // 'registered', 'unregistered' or 'archived'
 $event->receivedAt;             // DateTimeImmutable
 $event->idempotent;             // true when this answer repeats an earlier send
+$event->requestId;              // 'req_3f9a...', the API's id for this request
 ```
 
 The payload can be any value that encodes as JSON, or left out:
@@ -129,6 +130,8 @@ $client->endpoints->delete($endpoint->id);
 ```
 
 An update changes only the members it is given: `null` clears the description, and a member that is left out keeps its value.
+
+Every object returned here and in the sections that follow carries the `requestId` of the answer it came from.
 
 ## Signing secrets
 
@@ -281,6 +284,8 @@ $replayed = $client->deliveries->replay($delivery->id);
 
 A delivery replay creates a new event too, delivered to that delivery's endpoint only. It is refused with a `ValidationException` while the delivery is still pending or retrying, or when the endpoint is disabled.
 
+Every delivery returned, and the event a replay returns, carries the `requestId` of the answer it came from.
+
 ## Organization
 
 ```php
@@ -313,9 +318,11 @@ foreach ($client->endpoints->all() as $endpoint) {
 
 Subscriptions, event types, events and deliveries are listed the same way; the signing secrets of an endpoint come as a plain array. Filters on events and deliveries are sent as given on every page, and timestamps are written as `2026-10-05T12:00:00Z`; the API answers a value it cannot use with a `ValidationException`.
 
+Each item carries the `requestId` of the page it came from, and `$page->requestId` is the page's own; listed signing secrets carry the `requestId` of their answer.
+
 ## Handling errors
 
-A request that fails throws an exception that extends `IngestVault\Exception\IngestVaultException`: a `NetworkException` when no answer arrived, or an `ApiException` or one of its subclasses when the answer is an error or cannot be read, with the HTTP `status`, the API's `problemCode` and its message.
+A request that fails throws an exception that extends `IngestVault\Exception\IngestVaultException`: a `NetworkException` when no answer arrived, or an `ApiException` or one of its subclasses when the answer is an error or cannot be read, with the HTTP `status`, the API's `problemCode` and its message. Every `ApiException` also carries `requestId`, the API's id for the failed request, and its message ends with that id, as in `The given data was invalid. (request req_3f9a...)`. After retries, it is the id of the last try.
 
 ```php
 use IngestVault\Exception\ApiException;
@@ -349,10 +356,11 @@ try {
                      // event type whose name an archived type holds) or
                      // 'payload_expired' (409, replaying an expired event)
     $e->getMessage();
+    $e->requestId;   // 'req_3f9a...': quote it to support to trace the request
 }
 ```
 
-`problemCode` is `null` when an answer carries no problem document, for example an error page from a proxy.
+`problemCode` is `null` when an answer carries no problem document, for example an error page from a proxy. `requestId` is `null` for the same answers, and the message then carries no id.
 
 A call the client cannot turn into a request fails with PHP's own exceptions before anything is sent: a payload that cannot be encoded as JSON throws a `JsonException`, and raw JSON text that is not valid JSON or a value that cannot be sent as a header, such as an idempotency key with a line break, throws an `InvalidArgumentException`.
 

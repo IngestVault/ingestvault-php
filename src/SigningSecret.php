@@ -15,6 +15,7 @@ final readonly class SigningSecret
         public ?\DateTimeImmutable $expiresAt,
         public \DateTimeImmutable $createdAt,
         public \DateTimeImmutable $updatedAt,
+        public ?string $requestId,
     ) {
         $this->secret = new \SensitiveParameterValue($secret);
     }
@@ -30,7 +31,7 @@ final readonly class SigningSecret
      *
      * @param array<mixed> $item
      */
-    public static function fromArray(#[\SensitiveParameter] array $item): ?self
+    public static function fromArray(#[\SensitiveParameter] array $item, ?string $requestId): ?self
     {
         $id = $item['id'] ?? null;
         $secret = $item['secret'] ?? null;
@@ -49,6 +50,6 @@ final readonly class SigningSecret
             return null;
         }
 
-        return new self($id, $secret, $expiresAt, $createdAt, $updatedAt);
+        return new self($id, $secret, $expiresAt, $createdAt, $updatedAt, $requestId);
     }
 }

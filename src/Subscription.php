@@ -15,6 +15,7 @@ final readonly class Subscription
         public ?string $description,
         public \DateTimeImmutable $createdAt,
         public \DateTimeImmutable $updatedAt,
+        public ?string $requestId,
     ) {}
 
     /**
@@ -22,7 +23,7 @@ final readonly class Subscription
      *
      * @param array<mixed> $item
      */
-    public static function fromArray(array $item): ?self
+    public static function fromArray(array $item, ?string $requestId): ?self
     {
         $id = $item['id'] ?? null;
         $filter = $item['filter'] ?? null;
@@ -43,6 +44,6 @@ final readonly class Subscription
             $names[] = $name;
         }
 
-        return new self($id, $names, $description, $createdAt, $updatedAt);
+        return new self($id, $names, $description, $createdAt, $updatedAt, $requestId);
     }
 }

@@ -23,6 +23,7 @@ final readonly class Event
         public bool $replay,
         public ?string $rootEventId,
         public ?Initiator $initiator,
+        public ?string $requestId,
     ) {}
 
     /**
@@ -30,7 +31,7 @@ final readonly class Event
      *
      * @param array<mixed> $item
      */
-    public static function fromArray(array $item, ?string $payloadJson = null): ?self
+    public static function fromArray(array $item, ?string $payloadJson, ?string $requestId): ?self
     {
         $id = $item['id'] ?? null;
         $type = $item['type'] ?? null;
@@ -64,6 +65,6 @@ final readonly class Event
             return null;
         }
 
-        return new self($id, $type, $typeRegistrationStatus, $payload, $payloadJson, $payloadState, $receivedAt, $idempotent, $replay, $rootEventId, $initiator);
+        return new self($id, $type, $typeRegistrationStatus, $payload, $payloadJson, $payloadState, $receivedAt, $idempotent, $replay, $rootEventId, $initiator, $requestId);
     }
 }

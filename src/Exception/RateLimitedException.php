@@ -13,8 +13,9 @@ final class RateLimitedException extends ApiException
         string $message,
         int $status,
         ?string $problemCode,
+        ?string $requestId,
         public readonly ?int $retryAfter,
     ) {
-        parent::__construct($message, $status, $problemCode);
+        parent::__construct($message, $status, $problemCode, $requestId);
     }
 }

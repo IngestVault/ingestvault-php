@@ -121,6 +121,24 @@ final class RetryTest extends TestCase
         $this->assertCount(2, $this->history);
     }
 
+    public function test_a_server_error_retried_then_raised_carries_the_request_id_of_the_last_try(): void
+    {
+        $client = $this->client([
+            (new Response(503))->withHeader('Request-Id', 'req_a'),
+            self::problemResponse(500, 'internal_error', 'Something went wrong.')->withHeader('Request-Id', 'req_b'),
+        ], retries: 1);
+
+        try {
+            $client->events->send('order.created');
+            $this->fail('Expected a ServerException.');
+        } catch (ServerException $e) {
+            $this->assertSame('req_b', $e->requestId);
+            $this->assertTrue(str_ends_with($e->getMessage(), ' (request req_b)'), $e->getMessage());
+        }
+
+        $this->assertCount(2, $this->history);
+    }
+
     public function test_a_client_error_is_not_retried(): void
     {
         $client = $this->client([

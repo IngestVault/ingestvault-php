@@ -89,10 +89,18 @@ final class SpecCoverageTest extends TestCase
         }
     }
 
+    public function test_the_spec_documents_the_request_id_the_client_reads(): void
+    {
+        $spec = self::spec();
+
+        $this->assertSame('string', $spec['components']['headers']['RequestId']['schema']['type'] ?? null);
+        $this->assertSame('string', $spec['components']['schemas']['Problem']['properties']['request_id']['type'] ?? null);
+    }
+
     /**
-     * @return array{published: list<string>, specOnly: list<string>}
+     * @return array<mixed>
      */
-    private static function operations(): array
+    private static function spec(): array
     {
         $path = getenv('INGESTVAULT_OPENAPI_SPEC');
         if ($path === false || $path === '' || ! is_readable($path)) {
@@ -100,6 +108,16 @@ final class SpecCoverageTest extends TestCase
         }
 
         $spec = Yaml::parseFile($path);
+
+        return is_array($spec) ? $spec : [];
+    }
+
+    /**
+     * @return array{published: list<string>, specOnly: list<string>}
+     */
+    private static function operations(): array
+    {
+        $spec = self::spec();
         $operations = ['published' => [], 'specOnly' => []];
 
         foreach ($spec['paths'] ?? [] as $pathItem) {

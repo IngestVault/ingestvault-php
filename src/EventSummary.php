@@ -13,6 +13,7 @@ final readonly class EventSummary
         public \DateTimeImmutable $receivedAt,
         public bool $replay,
         public ?string $rootEventId,
+        public ?string $requestId,
     ) {}
 
     /**
@@ -20,7 +21,7 @@ final readonly class EventSummary
      *
      * @param array<mixed> $item
      */
-    public static function fromArray(array $item): ?self
+    public static function fromArray(array $item, ?string $requestId): ?self
     {
         $id = $item['id'] ?? null;
         $type = $item['type'] ?? null;
@@ -34,6 +35,6 @@ final readonly class EventSummary
             return null;
         }
 
-        return new self($id, $type, $typeRegistrationStatus, $receivedAt, $replay, $rootEventId);
+        return new self($id, $type, $typeRegistrationStatus, $receivedAt, $replay, $rootEventId, $requestId);
     }
 }

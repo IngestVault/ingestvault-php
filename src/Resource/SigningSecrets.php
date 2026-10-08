@@ -15,7 +15,7 @@ final class SigningSecrets extends Group
     {
         $response = $this->transport->request('GET', self::path($endpointId));
 
-        return self::items(self::body($response)['data'] ?? null, SigningSecret::fromArray(...))
+        return self::items(self::body($response)['data'] ?? null, SigningSecret::fromArray(...), self::requestId($response))
             ?? throw self::unreadable($response, "the endpoint's signing secrets");
     }
 

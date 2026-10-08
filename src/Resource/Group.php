@@ -28,15 +28,22 @@ abstract class Group
         return is_array($body) ? $body : [];
     }
 
+    protected static function requestId(ResponseInterface $response): ?string
+    {
+        $requestId = $response->getHeaderLine('Request-Id');
+
+        return $requestId === '' ? null : $requestId;
+    }
+
     /**
      * @template T of object
      *
-     * @param callable(array<mixed>): ?T $fromArray
+     * @param callable(array<mixed>, ?string): ?T $fromArray
      * @return T
      */
     protected static function item(ResponseInterface $response, callable $fromArray, string $noun): object
     {
-        return $fromArray(self::body($response)) ?? throw self::unreadable($response, $noun);
+        return $fromArray(self::body($response), self::requestId($response)) ?? throw self::unreadable($response, $noun);
     }
 
     protected static function event(ResponseInterface $response): Event
@@ -44,20 +51,21 @@ abstract class Group
         $json = (string) $response->getBody();
         $body = json_decode($json, true);
 
-        return Event::fromArray(is_array($body) ? $body : [], Json::member($json, 'payload'))
+        return Event::fromArray(is_array($body) ? $body : [], Json::member($json, 'payload'), self::requestId($response))
             ?? throw self::unreadable($response, 'an event');
     }
 
     /**
      * @template T of object
      *
-     * @param callable(array<mixed>): ?T $fromArray
+     * @param callable(array<mixed>, ?string): ?T $fromArray
      * @return Page<T>
      */
     protected static function page(ResponseInterface $response, callable $fromArray, string $noun): Page
     {
         $body = self::body($response);
-        $data = self::items($body['data'] ?? null, $fromArray);
+        $requestId = self::requestId($response);
+        $data = self::items($body['data'] ?? null, $fromArray, $requestId);
         $hasMore = $body['has_more'] ?? null;
         $nextCursor = $body['next_cursor'] ?? null;
 
@@ -65,16 +73,16 @@ abstract class Group
             throw self::unreadable($response, $noun);
         }
 
-        return new Page($data, $hasMore, $nextCursor);
+        return new Page($data, $hasMore, $nextCursor, $requestId);
     }
 
     /**
      * @template T of object
      *
-     * @param callable(array<mixed>): ?T $fromArray
+     * @param callable(array<mixed>, ?string): ?T $fromArray
      * @return ?list<T>
      */
-    protected static function items(mixed $data, callable $fromArray): ?array
+    protected static function items(mixed $data, callable $fromArray, ?string $requestId): ?array
     {
         if (! is_array($data) || ! array_is_list($data)) {
             return null;
@@ -82,7 +90,7 @@ abstract class Group
 
         $items = [];
         foreach ($data as $item) {
-            $item = is_array($item) ? $fromArray($item) : null;
+            $item = is_array($item) ? $fromArray($item, $requestId) : null;
             if ($item === null) {
                 return null;
             }
@@ -97,6 +105,8 @@ abstract class Group
         return new ApiException(
             sprintf('The API answered with HTTP %d but the body is not %s.', $response->getStatusCode(), $noun),
             $response->getStatusCode(),
+            null,
+            self::requestId($response),
         );
     }
 }

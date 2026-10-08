@@ -2,6 +2,17 @@
 
 All notable changes to this package are recorded here, newest first.
 
+## 0.5.0 - 2026-10-08
+
+### Added
+
+- `requestId` on every exception from the API, the id the API gave the failed request, taken from the `Request-Id` header or, when that is missing, from the problem document. The exception's message ends with it, as in `(request req_...)`. It is `null`, and the message carries no id, when the answer came from outside the API, such as a proxy's error page.
+- `requestId` on every result object and on `Page`, from the `Request-Id` header of the answer. Items in a list carry the id of the page they came from.
+
+### Changed
+
+- The constructors of the result objects, of `Page` and of `ValidationException`, `RateLimitedException` and `QuotaExceededException` take the request id as a new parameter. Only code that constructs these objects itself is affected.
+
 ## 0.4.0 - 2026-10-07
 
 ### Changed

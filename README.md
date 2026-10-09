@@ -1,5 +1,7 @@
 # IngestVault PHP
 
+> **IngestVault is not live yet.** The API this package talks to is not open to the public, so the package cannot be used at the moment. It is published ahead of launch so that the package name and its versions are in place. Sign-up and API keys follow when the service opens.
+
 The PHP client for the IngestVault API. It sends events to IngestVault, which stores them and delivers them to your endpoints as webhooks, configures the endpoints, subscriptions and event types that decide where they go, and reads and replays the events and deliveries that resulted. It needs PHP 8.2 or newer and works with any framework.
 
 ## Installation

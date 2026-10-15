@@ -10,6 +10,7 @@ use IngestVault\Exception\ApiException;
 use IngestVault\Exception\AuthenticationException;
 use IngestVault\Exception\IdempotencyConflictException;
 use IngestVault\Exception\IngestVaultException;
+use IngestVault\Exception\OrganizationInactiveException;
 use IngestVault\Exception\PayloadTooLargeException;
 use IngestVault\Exception\RateLimitedException;
 use IngestVault\Exception\ServerException;
@@ -21,6 +22,10 @@ final class ErrorsTest extends TestCase
     private const ID = '0199b2c4-1111-7a3b-9c4d-5e6f7a8b9c01';
 
     private const REQUEST_ID = 'req_3f9a1c2b7d4e8f6051a2b3c4d5e6f708';
+
+    private const UNPAID_DETAIL = 'This organization needs a plan. Choose a plan on its Billing page to activate it.';
+
+    private const INACTIVE_MESSAGE = 'The organization is inactive. Choose a plan on the Billing page of the IngestVault console to activate it.';
 
     private function raised(Response $response): ApiException
     {
@@ -84,6 +89,40 @@ final class ErrorsTest extends TestCase
         $this->assertSame('The organization is suspended.', $e->getMessage());
     }
 
+    public function test_a_402_for_an_inactive_organization_raises_the_dedicated_error_with_its_own_message(): void
+    {
+        $e = $this->raised(self::problemResponse(402, 'organization_unpaid', self::UNPAID_DETAIL, headers: ['Request-Id' => self::REQUEST_ID]));
+
+        $this->assertSame(OrganizationInactiveException::class, $e::class);
+        $this->assertSame(402, $e->status);
+        $this->assertSame('organization_unpaid', $e->problemCode);
+        $this->assertSame(self::REQUEST_ID, $e->requestId);
+        $this->assertSame(self::INACTIVE_MESSAGE . ' (request ' . self::REQUEST_ID . ')', $e->getMessage());
+        $this->assertStringContainsString('inactive', $e->getMessage());
+        $this->assertStringContainsString('Billing', $e->getMessage());
+        $this->assertStringContainsString('console', $e->getMessage());
+        $this->assertFalse(stripos($e->getMessage(), 'unpaid'));
+    }
+
+    public function test_a_402_for_an_inactive_organization_without_the_header_takes_the_request_id_from_the_problem_body(): void
+    {
+        $e = $this->raised(self::problemResponse(402, 'organization_unpaid', self::UNPAID_DETAIL, ['request_id' => self::REQUEST_ID]));
+
+        $this->assertSame(OrganizationInactiveException::class, $e::class);
+        $this->assertSame(self::REQUEST_ID, $e->requestId);
+        $this->assertSame(self::INACTIVE_MESSAGE . ' (request ' . self::REQUEST_ID . ')', $e->getMessage());
+    }
+
+    public function test_a_402_with_another_code_raises_a_general_api_error(): void
+    {
+        $e = $this->raised(self::problemResponse(402, 'payment_required', 'A payment is required.'));
+
+        $this->assertSame(ApiException::class, $e::class);
+        $this->assertSame(402, $e->status);
+        $this->assertSame('payment_required', $e->problemCode);
+        $this->assertSame('A payment is required.', $e->getMessage());
+    }
+
     /**
      * @param class-string<ApiException> $class
      */
@@ -106,6 +145,7 @@ final class ErrorsTest extends TestCase
     {
         yield 'gateway error' => [502, ServerException::class];
         yield 'body too large at the proxy' => [413, PayloadTooLargeException::class];
+        yield 'payment required without a problem document' => [402, ApiException::class];
     }
 
     /**
@@ -130,6 +170,7 @@ final class ErrorsTest extends TestCase
         yield 'rate limited' => [429, 'rate_limited', RateLimitedException::class];
         yield 'authentication failure' => [401, 'unauthenticated', AuthenticationException::class];
         yield 'server error' => [500, 'internal_error', ServerException::class];
+        yield 'organization inactive' => [402, 'organization_unpaid', OrganizationInactiveException::class];
     }
 
     public function test_an_error_without_the_header_takes_the_request_id_from_the_problem_body(): void
@@ -330,6 +371,38 @@ final class ErrorsTest extends TestCase
         $this->assertCount(1, $this->history);
     }
 
+    /**
+     * @param \Closure(Client): mixed $call
+     */
+    #[DataProvider('operations')]
+    #[DataProvider('sends')]
+    public function test_an_inactive_organization_on_any_operation_raises_the_dedicated_error_after_one_try(\Closure $call): void
+    {
+        $client = $this->client([
+            self::problemResponse(402, 'organization_unpaid', self::UNPAID_DETAIL, headers: ['Request-Id' => self::REQUEST_ID]),
+            new Response(503),
+            self::eventResponse(),
+        ], retries: 2);
+
+        try {
+            $call($client);
+            $this->fail('Expected an OrganizationInactiveException.');
+        } catch (OrganizationInactiveException $e) {
+            $this->assertSame(402, $e->status);
+            $this->assertSame(self::REQUEST_ID, $e->requestId);
+        }
+
+        $this->assertCount(1, $this->history);
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(Client): mixed}>
+     */
+    public static function sends(): iterable
+    {
+        yield 'send an event' => [static fn(Client $client): mixed => $client->events->send('order.created')];
+    }
+
     public function test_creating_an_event_type_whose_name_is_archived_raises_a_general_api_error_with_the_code(): void
     {
         $e = $this->raisedBy(
@@ -392,6 +465,8 @@ final class ErrorsTest extends TestCase
         yield 'delivery without next_attempt_at on get delivery' => [$delivery, $json(array_diff_key(self::deliveryWithAttempts(), ['next_attempt_at' => true])), 'The API answered with HTTP 200 but the body is not a delivery.'];
         yield 'html on the organization' => [$organization, clone $html, 'The API answered with HTTP 200 but the body is not an organization.'];
         yield 'organization without an id' => [$organization, $json($withoutId(self::organization())), 'The API answered with HTTP 200 but the body is not an organization.'];
+        yield 'organization without a state' => [$organization, $json(array_diff_key(self::organization(), ['state' => true])), 'The API answered with HTTP 200 but the body is not an organization.'];
+        yield 'organization with a plan that is not a string' => [$organization, $json(self::organization(['plan' => 3])), 'The API answered with HTTP 200 but the body is not an organization.'];
         yield 'item without an id on signing secrets' => [$secrets, $json(['data' => [$withoutId(self::signingSecret())]]), "The API answered with HTTP 200 but the body is not the endpoint's signing secrets."];
     }
 

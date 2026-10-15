@@ -8,6 +8,8 @@ use Psr\Http\Message\ResponseInterface;
 
 class ApiException extends IngestVaultException
 {
+    private const ORGANIZATION_INACTIVE = 'The organization is inactive. Choose a plan on the Billing page of the IngestVault console to activate it.';
+
     /**
      * @param ?string $requestId Null when the answer came from outside the API, such as a proxy's 502 or 504, or a 413 for a body above the size limit.
      */
@@ -42,6 +44,7 @@ class ApiException extends IngestVaultException
             $code === 'validation_failed' => new ValidationException($message, $status, $code, $requestId, self::errors($body)),
             $code === 'rate_limited' => new RateLimitedException($message, $status, $code, $requestId, self::retryAfter($response)),
             $code === 'quota_exceeded' => new QuotaExceededException($message, $status, $code, $requestId, self::retryAfter($response)),
+            $status === 402 && $code === 'organization_unpaid' => new OrganizationInactiveException(self::ORGANIZATION_INACTIVE, $status, $code, $requestId),
             $code === 'idempotency_key_conflict' => new IdempotencyConflictException($message, $status, $code, $requestId),
             $status === 401 => new AuthenticationException($message, $status, $code, $requestId),
             $status === 413 => new PayloadTooLargeException($message, $status, $code, $requestId),

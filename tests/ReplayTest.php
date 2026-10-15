@@ -10,6 +10,7 @@ use GuzzleHttp\Psr7\Response;
 use IngestVault\Client;
 use IngestVault\Event;
 use IngestVault\Exception\ApiException;
+use IngestVault\Exception\OrganizationInactiveException;
 use IngestVault\Exception\QuotaExceededException;
 use IngestVault\Exception\RateLimitedException;
 use IngestVault\Exception\ValidationException;
@@ -209,6 +210,10 @@ final class ReplayTest extends TestCase
             yield $name . ' over the quota' => [
                 $replay, self::problemResponse(429, 'quota_exceeded', 'The quota is used up.', headers: ['Retry-After' => '3600']),
                 QuotaExceededException::class, 429, 'quota_exceeded', [], 3600,
+            ];
+            yield $name . ' of an inactive organization' => [
+                $replay, self::problemResponse(402, 'organization_unpaid', 'This organization needs a plan. Choose a plan on its Billing page to activate it.'),
+                OrganizationInactiveException::class, 402, 'organization_unpaid', [], null,
             ];
         }
 

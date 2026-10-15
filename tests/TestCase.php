@@ -263,6 +263,8 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
         return $overrides + [
             'id' => '0199b2c4-8888-7a3b-9c4d-5e6f7a8b9c08',
             'name' => 'Acme',
+            'state' => 'active',
+            'plan' => 'starter',
             'notification_email' => 'ops@acme.example',
             'created_at' => '2026-09-01T10:00:00Z',
             'payloads_visible' => false,

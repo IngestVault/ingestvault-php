@@ -12,6 +12,9 @@ final readonly class Organization
         public string $notificationEmail,
         public \DateTimeImmutable $createdAt,
         public bool $payloadsVisible,
+        public string $state,
+        public ?string $plan,
+        public ?string $unpaidReason,
         public ?string $requestId,
     ) {}
 
@@ -27,11 +30,15 @@ final readonly class Organization
         $notificationEmail = $item['notification_email'] ?? null;
         $createdAt = Timestamp::parse($item['created_at'] ?? null);
         $payloadsVisible = $item['payloads_visible'] ?? null;
+        $state = $item['state'] ?? null;
+        $plan = $item['plan'] ?? null;
+        $unpaidReason = $item['unpaid_reason'] ?? null;
 
-        if (! is_string($id) || ! is_string($name) || ! is_string($notificationEmail) || $createdAt === null || ! is_bool($payloadsVisible)) {
+        if (! is_string($id) || ! is_string($name) || ! is_string($notificationEmail) || $createdAt === null || ! is_bool($payloadsVisible)
+            || ! is_string($state) || ! (is_string($plan) || $plan === null) || ! (is_string($unpaidReason) || $unpaidReason === null)) {
             return null;
         }
 
-        return new self($id, $name, $notificationEmail, $createdAt, $payloadsVisible, $requestId);
+        return new self($id, $name, $notificationEmail, $createdAt, $payloadsVisible, $state, $plan, $unpaidReason, $requestId);
     }
 }

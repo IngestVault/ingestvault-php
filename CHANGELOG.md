@@ -2,6 +2,18 @@
 
 All notable changes to this package are recorded here, newest first.
 
+## 0.6.0 - 2026-10-15
+
+### Added
+
+- `OrganizationInactiveException`, thrown for a 402 with the code `organization_unpaid`, which the API answers to every operation except reading the organization while the organization is inactive. It is never retried, since only choosing a plan fixes it. Its message says that the organization is inactive and points to the Billing page of the IngestVault console, and like every other exception from the API it carries the `requestId` and ends its message with it.
+- `state`, `plan` and `unpaidReason` on `Organization`, as the API returns them. `state` is `active`, or `unpaid` while the organization is inactive. `plan` is `null` while the organization is inactive, and `unpaidReason` is `null` while it is active.
+
+### Changed
+
+- The constructor of `Organization` takes the state, the plan and the reason as new parameters before the request id. Only code that constructs it itself is affected.
+- A 402 with the code `organization_unpaid` was a plain `ApiException` in earlier versions.
+
 ## 0.5.0 - 2026-10-08
 
 ### Added

@@ -10,6 +10,7 @@ use GuzzleHttp\Psr7\Response;
 use IngestVault\Client;
 use IngestVault\Exception\ApiException;
 use IngestVault\Exception\NetworkException;
+use IngestVault\Exception\OrganizationInactiveException;
 use IngestVault\Exception\QuotaExceededException;
 use IngestVault\Exception\RateLimitedException;
 use IngestVault\Exception\ServerException;
@@ -178,6 +179,28 @@ final class RetryTest extends TestCase
         $call($this->client([new Response(503), $success()], retries: 1));
 
         $this->assertCount(2, $this->history);
+    }
+
+    /**
+     * @param \Closure(Client): mixed $call
+     */
+    #[DataProvider('retriedOperations')]
+    public function test_an_inactive_organization_on_a_retried_operation_is_raised_after_one_try(\Closure $call, \Closure $success): void
+    {
+        $client = $this->client([
+            self::problemResponse(402, 'organization_unpaid', 'This organization needs a plan. Choose a plan on its Billing page to activate it.'),
+            $success(),
+        ], retries: 2);
+
+        try {
+            $call($client);
+            $this->fail('Expected an OrganizationInactiveException.');
+        } catch (OrganizationInactiveException $e) {
+            $this->assertSame(402, $e->status);
+            $this->assertSame('organization_unpaid', $e->problemCode);
+        }
+
+        $this->assertCount(1, $this->history);
     }
 
     /**

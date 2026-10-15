@@ -15,7 +15,7 @@ use IngestVault\Resource\Subscriptions;
 
 final class Client
 {
-    public const VERSION = '0.5.0';
+    public const VERSION = '0.6.0';
 
     public readonly Events $events;
 

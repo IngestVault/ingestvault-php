@@ -97,6 +97,19 @@ final class SpecCoverageTest extends TestCase
         $this->assertSame('string', $spec['components']['schemas']['Problem']['properties']['request_id']['type'] ?? null);
     }
 
+    public function test_the_spec_documents_the_inactive_organization_answer_and_fields_the_client_reads(): void
+    {
+        $spec = self::spec();
+        $example = $spec['components']['responses']['OrganizationUnpaid']['content']['application/problem+json']['example'] ?? [];
+        $organization = $spec['components']['schemas']['Organization'] ?? [];
+
+        $this->assertSame(402, $example['status'] ?? null);
+        $this->assertSame('organization_unpaid', $example['code'] ?? null);
+        $this->assertContains('state', $organization['required'] ?? []);
+        $this->assertArrayHasKey('plan', $organization['properties'] ?? []);
+        $this->assertArrayHasKey('unpaid_reason', $organization['properties'] ?? []);
+    }
+
     /**
      * @return array<mixed>
      */

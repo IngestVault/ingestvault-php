@@ -31,7 +31,7 @@ $client = new Client(
 
 An API key that is empty, or that contains spaces, control characters or anything outside plain ASCII (such as a trailing newline read from a file), throws an `InvalidArgumentException` before any request is made.
 
-`Client::VERSION` is the version of this client (`'0.5.0'`); every request sends it in the `User-Agent` header as `ingestvault-php/0.5.0`.
+`Client::VERSION` is the version of this client (`'0.6.0'`); every request sends it in the `User-Agent` header as `ingestvault-php/0.6.0`.
 
 ## Sending an event
 
@@ -94,7 +94,7 @@ $event = $client->events->send('order.cancelled', Payload::None, 'order-cancelle
 
 Sending the same type and payload again with the same key within 24 hours returns the original event, with `idempotent` set to `true`. The API compares the payload byte for byte, so a second send under the same key whose payload was built differently, with the members in another order, an integer that became a float or raw JSON with other whitespace, throws an `IdempotencyConflictException`. A retry of the same send is always safe: its body is fixed once and sent unchanged.
 
-Network failures and 5xx answers are retried, up to `retries` times, after a pause of 250 ms before the first retry and 500 ms before the second. Every retry sends the same key, so a retry never creates a second event. Nothing else is retried. A 429 is thrown straight away with the wait time from `Retry-After`; the client never sleeps on it, so you decide when to try again.
+Network failures and 5xx answers are retried, up to `retries` times, after a pause of 250 ms before the first retry and 500 ms before the second. Every retry sends the same key, so a retry never creates a second event. Nothing else is retried, a 402 for an inactive organization included. A 429 is thrown straight away with the wait time from `Retry-After`; the client never sleeps on it, so you decide when to try again.
 
 Replays carry a key too, generated unless you pass one, and are retried the same way, so a retried replay never creates a second event. Replays and sends share one key space: a key you used for a send must not be reused for a replay, nor the other way round.
 
@@ -298,9 +298,12 @@ $organization->name;
 $organization->notificationEmail;
 $organization->createdAt;       // DateTimeImmutable
 $organization->payloadsVisible; // whether IngestVault support may view your payloads
+$organization->state;           // 'active', or 'unpaid' while the organization is inactive
+$organization->plan;            // 'free', 'starter', 'pro', 'business' or 'custom'; null while inactive
+$organization->unpaidReason;    // null while active; 'never_active' or 'lapsed' while inactive
 ```
 
-`current()` reads the organization the API key belongs to.
+`current()` reads the organization the API key belongs to. It answers for an inactive organization too, while every other operation throws an `OrganizationInactiveException`. New values may be added to `state` and `unpaidReason`.
 
 ## Lists
 
@@ -331,6 +334,7 @@ use IngestVault\Exception\ApiException;
 use IngestVault\Exception\AuthenticationException;
 use IngestVault\Exception\IdempotencyConflictException;
 use IngestVault\Exception\NetworkException;
+use IngestVault\Exception\OrganizationInactiveException;
 use IngestVault\Exception\PayloadTooLargeException;
 use IngestVault\Exception\QuotaExceededException;
 use IngestVault\Exception\RateLimitedException;
@@ -351,6 +355,8 @@ try {
     // 413: the event is larger than 1 MB
 } catch (ServerException | NetworkException $e) {
     // 5xx or no answer, after the retries ran out
+} catch (OrganizationInactiveException $e) {
+    // 402: the organization is inactive; choose a plan on the console's Billing page
 } catch (ApiException $e) {
     $e->status;      // 403
     $e->problemCode; // a code this client does not know yet, or another
@@ -363,6 +369,8 @@ try {
 ```
 
 `problemCode` is `null` when an answer carries no problem document, for example an error page from a proxy. `requestId` is `null` for the same answers, and the message then carries no id.
+
+An `OrganizationInactiveException` is thrown by every operation except `current()` while the organization is inactive. It is never retried, since only choosing a plan in the console fixes it. Its message ends with the request id like any other.
 
 A call the client cannot turn into a request fails with PHP's own exceptions before anything is sent: a payload that cannot be encoded as JSON throws a `JsonException`, and raw JSON text that is not valid JSON or a value that cannot be sent as a header, such as an idempotency key with a line break, throws an `InvalidArgumentException`.
 

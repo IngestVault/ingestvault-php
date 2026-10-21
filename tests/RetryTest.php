@@ -234,6 +234,10 @@ final class RetryTest extends TestCase
         yield 'list deliveries' => [static fn(Client $client): mixed => $client->deliveries->list(status: 'failed'), static fn(): Response => self::pageResponse([self::delivery()], null)];
         yield 'get a delivery' => [static fn(Client $client): mixed => $client->deliveries->get($id), static fn(): Response => self::deliveryResponse()];
         yield 'read the current organization' => [static fn(Client $client): mixed => $client->organization->current(), static fn(): Response => self::organizationResponse()];
+        yield 'list sources' => [static fn(Client $client): mixed => $client->sources->list(), static fn(): Response => self::pageResponse([self::source()], null)];
+        yield 'get a source' => [static fn(Client $client): mixed => $client->sources->get($id), static fn(): Response => self::sourceResponse()];
+        yield 'update a source' => [static fn(Client $client): mixed => $client->sources->update($id, ['enabled' => false]), static fn(): Response => self::sourceResponse()];
+        yield 'delete a source' => [static fn(Client $client): mixed => $client->sources->delete($id), $noContent];
     }
 
     /**
@@ -283,5 +287,7 @@ final class RetryTest extends TestCase
         yield 'create a subscription' => [static fn(Client $client): mixed => $client->subscriptions->create($id, []), static fn(): Response => self::subscriptionResponse(201)];
         yield 'create an event type' => [static fn(Client $client): mixed => $client->eventTypes->create('order.created'), static fn(): Response => self::eventTypeResponse(201)];
         yield 'rotate a signing secret' => [static fn(Client $client): mixed => $client->signingSecrets->rotate($id), static fn(): Response => self::signingSecretResponse(201)];
+        yield 'create a source' => [static fn(Client $client): mixed => $client->sources->create('GitHub'), static fn(): Response => self::sourceResponse(201)];
+        yield 'rotate a source url' => [static fn(Client $client): mixed => $client->sources->rotateUrl($id), static fn(): Response => self::sourceResponse()];
     }
 }

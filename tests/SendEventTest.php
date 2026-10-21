@@ -144,7 +144,7 @@ final class SendEventTest extends TestCase
     {
         $event = $this->client([self::eventResponse(overrides: [
             'type_registration_status' => 'pending_review',
-            'source' => ['kind' => 'sdk'],
+            'channel' => ['kind' => 'sdk'],
         ])])->events->send('order.created');
 
         $this->assertSame('pending_review', $event->typeRegistrationStatus);

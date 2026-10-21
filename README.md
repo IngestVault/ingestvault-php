@@ -31,7 +31,7 @@ $client = new Client(
 
 An API key that is empty, or that contains spaces, control characters or anything outside plain ASCII (such as a trailing newline read from a file), throws an `InvalidArgumentException` before any request is made.
 
-`Client::VERSION` is the version of this client (`'0.6.0'`); every request sends it in the `User-Agent` header as `ingestvault-php/0.6.0`.
+`Client::VERSION` is the version of this client (`'0.7.0'`); every request sends it in the `User-Agent` header as `ingestvault-php/0.7.0`.
 
 ## Sending an event
 
@@ -98,7 +98,7 @@ Network failures and 5xx answers are retried, up to `retries` times, after a pau
 
 Replays carry a key too, generated unless you pass one, and are retried the same way, so a retried replay never creates a second event. Replays and sends share one key space: a key you used for a send must not be reused for a replay, nor the other way round.
 
-Creating an endpoint, a subscription or an event type and rotating a signing secret are never retried: they carry no idempotency key, and a request whose answer was lost may still have succeeded. Every other operation is retried like a send, up to `retries` times. A retried delete whose first try went through answers 404; treat a 404 on delete as deleted if that suits you.
+Creating an endpoint, a subscription, an event type or a source and rotating a signing secret or a source's URL are never retried: they carry no idempotency key, and a request whose answer was lost may still have succeeded. Every other operation is retried like a send, up to `retries` times. A retried delete whose first try went through answers 404; treat a 404 on delete as deleted if that suits you.
 
 A send can be prepared now and sent later, for example from a queued job. The idempotency key and the request body are fixed when the event is prepared, and a `PreparedEvent` can be serialized:
 
@@ -189,17 +189,50 @@ $client->eventTypes->archive($type->id);
 $client->eventTypes->unarchive($type->id);
 ```
 
+## Sources
+
+A source receives webhooks from a third party, such as Stripe, Shopify or GitHub, on a URL of its own, and forwards each one to the endpoints connected to it.
+
+```php
+$source = $client->sources->create('GitHub', description: 'Repository hooks');
+$stripe = $client->sources->create('Stripe', endpointIds: [$endpoint->id]); // connected from the start
+
+$source->url();       // 'https://hooks.ingestvault.com/6f1c...', the URL to give the provider
+$source->name;        // 'GitHub'
+$source->enabled;     // true
+$source->endpointIds; // the connected endpoints' ids, in order
+
+$client->sources->update($source->id, ['endpoint_ids' => [$endpoint->id]]);
+$client->sources->get($source->id);
+$client->sources->list(); // one page, see Lists
+
+$rotated = $client->sources->rotateUrl($source->id);
+$rotated->url();              // the new URL
+$rotated->graceUrl();         // the previous URL, still working until graceUrlExpiresAt
+$rotated->graceUrlExpiresAt;  // DateTimeImmutable, or null when there is no grace URL
+
+$client->sources->delete($source->id);
+```
+
+An update changes only the members it is given, and `endpoint_ids` replaces the connected endpoints as a whole. Anyone holding a source's URL can post to it, so both URL values are read only through `url()` and `graceUrl()` and never show up when the object is dumped or logged.
+
 ## Events
 
 ```php
 $page = $client->events->list(type: 'order.created', typeRegistrationStatus: 'unregistered');
 $page = $client->events->list(pageSize: 50, receivedAfter: '2026-10-05T00:00:00Z', receivedBefore: '2026-10-05T23:59:59Z');
 
+$page = $client->events->list(sourceId: $source->id);
+$page = $client->events->list(origin: 'source'); // or 'api'
+
 foreach ($client->events->all(receivedAfter: '2026-10-05T12:00:00Z', replay: false) as $summary) {
     $summary->id;
-    $summary->type;
-    $summary->receivedAt; // DateTimeImmutable
-    $summary->replay;     // true for an event created by a replay, with rootEventId set
+    $summary->type;              // 'order.created', or null for an event received on a source
+    $summary->origin;            // 'api' or 'source'
+    $summary->source;            // the source's id and name, or null
+    $summary->providerEventType; // 'push', the provider's own type, or null
+    $summary->receivedAt;        // DateTimeImmutable
+    $summary->replay;            // true for an event created by a replay, with rootEventId set
 }
 
 $event = $client->events->get($summary->id);
@@ -210,6 +243,19 @@ $event->payloadState; // 'available', 'expired' or 'none'
 ```
 
 List rows carry no payload; `get()` returns the full event. The payload comes in two forms: `payload` is decoded with PHP arrays, and `payloadJson` is the JSON text exactly as the API sent it, for when the difference between `{}` and `[]`, the formatting of a number such as `1.0`, or a large integer matters. The client writes a PHP float with its fraction, so a `1.0` you send reads back as `1.0` in `payloadJson` and as a PHP float in `payload`; every other float the API answers with carries its fraction as well. `payloadState` tells a payload of `null` from no payload and from an expired one, see [Payload states](#payload-states).
+
+An event received on a source has `origin` `'source'`, a `source` with its `id` and `name` (`null` once the source is deleted), and `null` for `type` and `typeRegistrationStatus`; `providerEventType` holds the provider's own event type when one was found. Events sent to the API have `origin` `'api'`. `get()` on a received event returns the request the provider sent:
+
+```php
+$event->body;         // the request's bytes exactly as received
+$event->bodyAsSent;   // the body as the API wrote it: the same, or its base64 encoding
+$event->bodyEncoding; // 'text', 'base64' (bytes that are not valid UTF-8 or hold a NUL byte) or 'none' (an empty body)
+$event->contentType;  // 'application/json', or null when none was sent
+$event->headers;      // [['x-github-event', 'push'], ...], in order with repeated names kept
+$event->queryString;  // 'a=1&b=2', without the '?'
+```
+
+All six are `null` on events sent to the API.
 
 A replay creates a new event with the same type and payload, delivered to the endpoints whose subscriptions match it now:
 
@@ -241,6 +287,8 @@ An event's `payloadState` is one of three values:
 - `'expired'`: the event is past the retention of your plan. Both forms are `null`, and replaying the event, or a delivery of it, throws an `ApiException` with the `problemCode` `'payload_expired'` (409).
 - `'none'`: the event was sent without a payload. Both forms are `null`; the state never becomes `'expired'`, so the event can always be replayed.
 
+An event received on a source never has a payload: `payload` and `payloadJson` are always `null`, and its request is in `body` and the members beside it. Its state follows the body, `'none'` for an empty one and `'available'` otherwise, and the same retention applies: once it has passed, `body`, `headers` and `queryString` are `null`.
+
 The state is how to tell a null payload from no payload, and an expired one from either. It is read when the event is: a send or replay answers `'available'` or `'none'`, and a later `get()`, or a repeated send or replay under the same key, answers `'expired'` once the retention has passed.
 
 A delivery read with `get()` carries the same state for its event in `payloadState`; delivery list rows carry none. Its attempts keep their response bodies for as long as the event's payload would be kept: `responseBody` is `null` once the event is past the retention, under `'expired'` and under `'none'` alike.
@@ -253,7 +301,10 @@ foreach ($client->deliveries->all(status: 'failed') as $delivery) {
     $delivery->attemptCount;
     $delivery->nextAttemptAt; // DateTimeImmutable while retrying, otherwise null
     $delivery->eventId;
-    $delivery->eventType;
+    $delivery->eventType;         // null for an event received on a source
+    $delivery->origin;            // 'api' or 'source'
+    $delivery->source;            // the source's id and name, or null
+    $delivery->providerEventType; // the provider's own type, or null
     $delivery->endpointId;
     $delivery->endpointUrl;
     $delivery->createdAt;     // DateTimeImmutable, as is updatedAt
@@ -267,6 +318,7 @@ $page = $client->deliveries->list(
     createdAfter: '2026-10-05T00:00:00Z',
     createdBefore: '2026-10-05T23:59:59Z',
 );
+$page = $client->deliveries->list(sourceId: $source->id, origin: 'source');
 
 $delivery = $client->deliveries->get($delivery->id);
 
@@ -321,7 +373,7 @@ foreach ($client->endpoints->all() as $endpoint) {
 }
 ```
 
-Subscriptions, event types, events and deliveries are listed the same way; the signing secrets of an endpoint come as a plain array. Filters on events and deliveries are sent as given on every page, and timestamps are written as `2026-10-05T12:00:00Z`; the API answers a value it cannot use with a `ValidationException`.
+Subscriptions, event types, sources, events and deliveries are listed the same way; the signing secrets of an endpoint come as a plain array. Filters on events and deliveries are sent as given on every page, and timestamps are written as `2026-10-05T12:00:00Z`; the API answers a value it cannot use with a `ValidationException`.
 
 Each item carries the `requestId` of the page it came from, and `$page->requestId` is the page's own; listed signing secrets carry the `requestId` of their answer.
 
@@ -389,8 +441,16 @@ $mock = new MockHandler([
         'id' => '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d',
         'type' => 'order.created',
         'type_registration_status' => 'registered',
+        'origin' => 'api',
+        'source' => null,
+        'provider_event_type' => null,
         'payload' => ['order' => 1042],
         'payload_state' => 'available',
+        'body' => null,
+        'body_encoding' => null,
+        'content_type' => null,
+        'headers' => null,
+        'query_string' => null,
         'received_at' => '2026-10-05T12:00:00Z',
         'idempotent' => false,
         'replay' => false,
@@ -408,6 +468,8 @@ IngestVault delivers events following the [Standard Webhooks](https://www.standa
 
 - `webhook-id` is the id of the original event. It stays the same across delivery retries and replays, so use it to skip deliveries you have already handled.
 - `ingestvault-event-type` carries the event type.
+
+A delivery of an event received on a source is signed the same way, over the provider's bytes as received. It carries `ingestvault-origin: source`, then `ingestvault-source-id`, `ingestvault-provider-event-type` and `ingestvault-query-string` when they have a value, and no `ingestvault-event-type`; every other delivery carries `ingestvault-origin: api`.
 
 ## License
 

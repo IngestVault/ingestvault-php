@@ -2,6 +2,24 @@
 
 All notable changes to this package are recorded here, newest first.
 
+## 0.7.0 - 2026-10-21
+
+### Added
+
+- `$client->sources`, to list, create, read, update and delete the sources that receive webhooks from third parties, and to rotate a source's URL. Creating a source and rotating its URL are never retried, like the other creates and rotations.
+- `Source`, whose `url()` and `graceUrl()` return its current URL and the URL a rotation superseded. Both are read only through these methods, so they never show up when the object is dumped, serialized or logged.
+- `SourceReference`, the `id` and `name` of the source an event was received on.
+- `origin`, `source` and `providerEventType` on `Event`, `EventSummary`, `Delivery` and `DeliveryWithAttempts`.
+- `body`, `bodyAsSent`, `bodyEncoding`, `contentType`, `headers` and `queryString` on `Event`, the request a provider sent to a source. `body` holds the bytes as received, decoded where the API sends them as base64; `headers` keeps their order and repeated names.
+- `sourceId` and `origin` filters on listing events and deliveries, sent as `source_id` and `origin`.
+
+### Changed
+
+- `type` and `typeRegistrationStatus` on `Event` and `EventSummary`, and `eventType` on `Delivery` and `DeliveryWithAttempts`, may be `null`: they are for an event received on a source.
+- `payload` and `payloadJson` are always `null` on an event received on a source, whatever its `payloadState`.
+- The constructors of `Event`, `EventSummary`, `Delivery` and `DeliveryWithAttempts` take the new members as new parameters.
+- `origin`, `source` and `provider_event_type` are required in every event and delivery the API answers with, and `body`, `body_encoding`, `content_type`, `headers` and `query_string` in a single event. An answer without them, such as a mocked or hand-built one in your own tests, is unreadable and throws an `ApiException`. Mocked answers need these members, as the Testing section of the README shows.
+
 ## 0.6.0 - 2026-10-15
 
 ### Added

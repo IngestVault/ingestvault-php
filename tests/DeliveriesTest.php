@@ -8,6 +8,8 @@ use GuzzleHttp\Psr7\Response;
 use IngestVault\Client;
 use IngestVault\Delivery;
 use IngestVault\DeliveryAttempt;
+use IngestVault\DeliveryWithAttempts;
+use IngestVault\Exception\ApiException;
 use PHPUnit\Framework\Attributes\DataProvider;
 
 final class DeliveriesTest extends TestCase
@@ -17,6 +19,8 @@ final class DeliveriesTest extends TestCase
     private const EVENT = '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d';
 
     private const ENDPOINT = '0199b2c4-1111-7a3b-9c4d-5e6f7a8b9c01';
+
+    private const SOURCE = '0199b2c4-aaaa-7a3b-9c4d-5e6f7a8b9c0a';
 
     private const BASE = 'https://api.example.test/v1';
 
@@ -52,10 +56,18 @@ final class DeliveriesTest extends TestCase
                 status: 'failed',
                 createdAfter: '2026-10-05T12:00:00Z',
                 createdBefore: '2026-10-06T12:00:00Z',
+                sourceId: self::SOURCE,
+                origin: 'source',
             ),
             self::pageResponse([self::delivery()], null),
             self::BASE . '/deliveries?page_size=10&cursor=c2&endpoint_id=' . self::ENDPOINT . '&event_id=' . self::EVENT
-                . '&event_type=order.created&status=failed&created_after=2026-10-05T12%3A00%3A00Z&created_before=2026-10-06T12%3A00%3A00Z',
+                . '&event_type=order.created&status=failed&created_after=2026-10-05T12%3A00%3A00Z&created_before=2026-10-06T12%3A00%3A00Z'
+                . '&source_id=' . self::SOURCE . '&origin=source',
+        ];
+        yield 'list of api deliveries' => [
+            static fn(Client $client): mixed => $client->deliveries->list(origin: 'api'),
+            self::pageResponse([self::delivery()], null),
+            self::BASE . '/deliveries?origin=api',
         ];
         yield 'get' => [
             static fn(Client $client): mixed => $client->deliveries->get(self::ID),
@@ -188,5 +200,67 @@ final class DeliveriesTest extends TestCase
         $this->assertSame('archived', $delivery->payloadState);
         $this->assertSame('skipped', $delivery->attempts[0]->outcome);
         $this->assertSame(self::ID, $page->data[0]->id);
+    }
+
+    public function test_an_api_delivery_has_no_source(): void
+    {
+        $client = $this->client([self::pageResponse([self::delivery()], null), self::deliveryResponse()]);
+
+        foreach ([$client->deliveries->list()->data[0], $client->deliveries->get(self::ID)] as $delivery) {
+            $this->assertSame('order.created', $delivery->eventType);
+            $this->assertSame('api', $delivery->origin);
+            $this->assertNull($delivery->source);
+            $this->assertNull($delivery->providerEventType);
+        }
+    }
+
+    public function test_an_inbound_delivery_has_no_event_type_and_names_its_source(): void
+    {
+        $inbound = [
+            'event' => ['id' => self::EVENT, 'type' => null],
+            'origin' => 'source',
+            'source' => ['id' => self::SOURCE, 'name' => 'GitHub'],
+            'provider_event_type' => 'push',
+        ];
+        $client = $this->client([self::pageResponse([self::delivery($inbound)], null), self::deliveryResponse(overrides: $inbound)]);
+
+        $row = $client->deliveries->list()->data[0];
+        $delivery = $client->deliveries->get(self::ID);
+
+        $this->assertInstanceOf(Delivery::class, $row);
+        $this->assertInstanceOf(DeliveryWithAttempts::class, $delivery);
+        foreach ([$row, $delivery] as $read) {
+            $this->assertSame(self::EVENT, $read->eventId);
+            $this->assertNull($read->eventType);
+            $this->assertSame('source', $read->origin);
+            $this->assertSame(self::SOURCE, $read->source?->id);
+            $this->assertSame('GitHub', $read->source?->name);
+            $this->assertSame('push', $read->providerEventType);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     */
+    #[DataProvider('unreadableDeliveries')]
+    public function test_a_delivery_of_an_unreadable_shape_makes_the_answer_unreadable(array $overrides): void
+    {
+        $client = $this->client([self::deliveryResponse(overrides: $overrides)]);
+
+        $this->expectException(ApiException::class);
+        $this->expectExceptionMessage('The API answered with HTTP 200 but the body is not a delivery.');
+
+        $client->deliveries->get(self::ID);
+    }
+
+    /**
+     * @return iterable<string, array{array<string, mixed>}>
+     */
+    public static function unreadableDeliveries(): iterable
+    {
+        yield 'an event without a type member' => [['event' => ['id' => self::EVENT]]];
+        yield 'a source without a name' => [['source' => ['id' => self::SOURCE]]];
+        yield 'no origin' => [['origin' => null]];
+        yield 'a provider event type that is not a string' => [['provider_event_type' => 42]];
     }
 }

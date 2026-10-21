@@ -42,8 +42,16 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
             'id' => '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d',
             'type' => 'order.created',
             'type_registration_status' => 'registered',
+            'origin' => 'api',
+            'source' => null,
+            'provider_event_type' => null,
             'payload' => ['order' => 1042],
             'payload_state' => 'available',
+            'body' => null,
+            'body_encoding' => null,
+            'content_type' => null,
+            'headers' => null,
+            'query_string' => null,
             'received_at' => '2026-10-05T12:00:00Z',
             'idempotent' => $status === 200,
             'replay' => false,
@@ -70,6 +78,14 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
     protected static function endpointResponse(int $status = 200, array $overrides = []): Response
     {
         return self::jsonResponse($status, self::endpoint($overrides));
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     */
+    protected static function sourceResponse(int $status = 200, array $overrides = []): Response
+    {
+        return self::jsonResponse($status, self::source($overrides));
     }
 
     /**
@@ -140,6 +156,26 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
      * @param array<string, mixed> $overrides
      * @return array<string, mixed>
      */
+    protected static function source(array $overrides = []): array
+    {
+        return $overrides + [
+            'id' => '0199b2c4-aaaa-7a3b-9c4d-5e6f7a8b9c0a',
+            'name' => 'GitHub',
+            'description' => 'Repository hooks',
+            'enabled' => true,
+            'url' => 'https://hooks.example.test/6f1c0b9e4a7d2c85e3f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6',
+            'grace_url' => null,
+            'grace_url_expires_at' => null,
+            'endpoint_ids' => ['0199b2c4-1111-7a3b-9c4d-5e6f7a8b9c01'],
+            'created_at' => '2026-10-01T08:00:00Z',
+            'updated_at' => '2026-10-02T09:30:00Z',
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $overrides
+     * @return array<string, mixed>
+     */
     protected static function eventType(array $overrides = []): array
     {
         return $overrides + [
@@ -192,6 +228,9 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
             'id' => '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d',
             'type' => 'order.created',
             'type_registration_status' => 'registered',
+            'origin' => 'api',
+            'source' => null,
+            'provider_event_type' => null,
             'received_at' => '2026-10-05T12:00:00Z',
             'replay' => false,
         ];
@@ -209,6 +248,9 @@ abstract class TestCase extends \PHPUnit\Framework\TestCase
             'attempt_count' => 2,
             'next_attempt_at' => '2026-10-05T12:05:00Z',
             'event' => ['id' => '0199b2c4-7d1e-7a3b-9c4d-5e6f7a8b9c0d', 'type' => 'order.created'],
+            'origin' => 'api',
+            'source' => null,
+            'provider_event_type' => null,
             'endpoint' => ['id' => '0199b2c4-1111-7a3b-9c4d-5e6f7a8b9c01', 'url' => 'https://hooks.example.test/orders'],
             'created_at' => '2026-10-05T12:00:01Z',
             'updated_at' => '2026-10-05T12:01:30Z',

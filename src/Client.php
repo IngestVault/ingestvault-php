@@ -11,11 +11,12 @@ use IngestVault\Resource\Events;
 use IngestVault\Resource\EventTypes;
 use IngestVault\Resource\Organization;
 use IngestVault\Resource\SigningSecrets;
+use IngestVault\Resource\Sources;
 use IngestVault\Resource\Subscriptions;
 
 final class Client
 {
-    public const VERSION = '0.6.0';
+    public const VERSION = '0.7.0';
 
     public readonly Events $events;
 
@@ -30,6 +31,8 @@ final class Client
     public readonly Deliveries $deliveries;
 
     public readonly Organization $organization;
+
+    public readonly Sources $sources;
 
     public function __construct(
         #[\SensitiveParameter]
@@ -62,5 +65,6 @@ final class Client
         $this->eventTypes = new EventTypes($transport);
         $this->deliveries = new Deliveries($transport);
         $this->organization = new Organization($transport);
+        $this->sources = new Sources($transport);
     }
 }

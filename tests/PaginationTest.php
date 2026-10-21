@@ -237,6 +237,18 @@ final class PaginationTest extends TestCase
             'https://api.example.test/v1/deliveries',
             'status=failed',
         ];
+        yield 'events by source and origin' => [
+            static fn(Client $client): \Generator => $client->events->all(sourceId: '0199b2c4-aaaa-7a3b-9c4d-5e6f7a8b9c0a', origin: 'source'),
+            static fn(array $overrides): array => self::eventSummary($overrides),
+            'https://api.example.test/v1/events',
+            'source_id=0199b2c4-aaaa-7a3b-9c4d-5e6f7a8b9c0a&origin=source',
+        ];
+        yield 'deliveries by source and origin' => [
+            static fn(Client $client): \Generator => $client->deliveries->all(sourceId: '0199b2c4-aaaa-7a3b-9c4d-5e6f7a8b9c0a', origin: 'source'),
+            static fn(array $overrides): array => self::delivery($overrides),
+            'https://api.example.test/v1/deliveries',
+            'source_id=0199b2c4-aaaa-7a3b-9c4d-5e6f7a8b9c0a&origin=source',
+        ];
     }
 
     /**

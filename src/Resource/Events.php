@@ -39,6 +39,8 @@ final class Events extends Group
         ?string $receivedAfter = null,
         ?string $receivedBefore = null,
         ?bool $replay = null,
+        ?string $sourceId = null,
+        ?string $origin = null,
     ): Page {
         return self::page(
             $this->transport->request('GET', '/events', [
@@ -50,6 +52,8 @@ final class Events extends Group
                 'received_before' => $receivedBefore,
                 // A bool would reach the query string as 1 or 0.
                 'replay' => $replay === null ? null : ($replay ? 'true' : 'false'),
+                'source_id' => $sourceId,
+                'origin' => $origin,
             ]),
             EventSummary::fromArray(...),
             'a page of events',
@@ -66,10 +70,12 @@ final class Events extends Group
         ?string $receivedAfter = null,
         ?string $receivedBefore = null,
         ?bool $replay = null,
+        ?string $sourceId = null,
+        ?string $origin = null,
     ): \Generator {
         $cursor = null;
         do {
-            $page = $this->list($pageSize, $cursor, $type, $typeRegistrationStatus, $receivedAfter, $receivedBefore, $replay);
+            $page = $this->list($pageSize, $cursor, $type, $typeRegistrationStatus, $receivedAfter, $receivedBefore, $replay, $sourceId, $origin);
             foreach ($page->data as $item) {
                 yield $item;
             }

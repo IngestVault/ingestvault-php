@@ -10,6 +10,7 @@ use IngestVault\Resource\Events;
 use IngestVault\Resource\EventTypes;
 use IngestVault\Resource\Organization;
 use IngestVault\Resource\SigningSecrets;
+use IngestVault\Resource\Sources;
 use IngestVault\Resource\Subscriptions;
 use Symfony\Component\Yaml\Yaml;
 
@@ -46,9 +47,15 @@ final class SpecCoverageTest extends TestCase
         'archiveEventType' => [EventTypes::class, 'archive'],
         'unarchiveEventType' => [EventTypes::class, 'unarchive'],
         'getCurrentOrganization' => [Organization::class, 'current'],
+        'listSources' => [Sources::class, 'list'],
+        'createSource' => [Sources::class, 'create'],
+        'getSource' => [Sources::class, 'get'],
+        'updateSource' => [Sources::class, 'update'],
+        'deleteSource' => [Sources::class, 'delete'],
+        'rotateSourceUrl' => [Sources::class, 'rotateUrl'],
     ];
 
-    private const GROUPS = [Events::class, Deliveries::class, Endpoints::class, SigningSecrets::class, Subscriptions::class, EventTypes::class, Organization::class];
+    private const GROUPS = [Events::class, Deliveries::class, Endpoints::class, SigningSecrets::class, Subscriptions::class, EventTypes::class, Organization::class, Sources::class];
 
     private const NOT_OPERATIONS = ['all', 'sendPrepared'];
 
@@ -110,6 +117,31 @@ final class SpecCoverageTest extends TestCase
         $this->assertArrayHasKey('unpaid_reason', $organization['properties'] ?? []);
     }
 
+    public function test_the_spec_documents_the_source_and_inbound_members_the_client_reads(): void
+    {
+        $spec = self::spec();
+        $schemas = $spec['components']['schemas'] ?? [];
+        $inbound = ['origin', 'source', 'provider_event_type'];
+
+        foreach (array_merge($inbound, ['body', 'body_encoding', 'content_type', 'headers', 'query_string']) as $member) {
+            $this->assertContains($member, $schemas['Event']['required'] ?? [], 'Event.' . $member);
+        }
+        foreach (['EventSummary', 'Delivery'] as $schema) {
+            foreach ($inbound as $member) {
+                $this->assertContains($member, $schemas[$schema]['required'] ?? [], $schema . '.' . $member);
+            }
+        }
+        foreach (['url', 'grace_url', 'grace_url_expires_at', 'endpoint_ids'] as $member) {
+            $this->assertContains($member, $schemas['Source']['required'] ?? [], 'Source.' . $member);
+        }
+
+        foreach (['listEvents', 'listDeliveries'] as $operationId) {
+            $parameters = self::parameterNames($spec, $operationId);
+            $this->assertContains('source_id', $parameters, $operationId);
+            $this->assertContains('origin', $parameters, $operationId);
+        }
+    }
+
     /**
      * @return array<mixed>
      */
@@ -123,6 +155,34 @@ final class SpecCoverageTest extends TestCase
         $spec = Yaml::parseFile($path);
 
         return is_array($spec) ? $spec : [];
+    }
+
+    /**
+     * @param array<mixed> $spec
+     * @return list<string>
+     */
+    private static function parameterNames(array $spec, string $operationId): array
+    {
+        foreach ($spec['paths'] ?? [] as $pathItem) {
+            foreach ($pathItem as $operation) {
+                if (! is_array($operation) || ($operation['operationId'] ?? null) !== $operationId) {
+                    continue;
+                }
+
+                $names = [];
+                foreach ($operation['parameters'] ?? [] as $parameter) {
+                    $ref = $parameter['$ref'] ?? null;
+                    if (is_string($ref)) {
+                        $parameter = $spec['components']['parameters'][substr($ref, strlen('#/components/parameters/'))] ?? [];
+                    }
+                    $names[] = (string) ($parameter['name'] ?? '');
+                }
+
+                return $names;
+            }
+        }
+
+        return [];
     }
 
     /**

@@ -24,6 +24,8 @@ final class Deliveries extends Group
         ?string $status = null,
         ?string $createdAfter = null,
         ?string $createdBefore = null,
+        ?string $sourceId = null,
+        ?string $origin = null,
     ): Page {
         return self::page(
             $this->transport->request('GET', '/deliveries', [
@@ -35,6 +37,8 @@ final class Deliveries extends Group
                 'status' => $status,
                 'created_after' => $createdAfter,
                 'created_before' => $createdBefore,
+                'source_id' => $sourceId,
+                'origin' => $origin,
             ]),
             Delivery::fromArray(...),
             'a page of deliveries',
@@ -52,10 +56,12 @@ final class Deliveries extends Group
         ?string $status = null,
         ?string $createdAfter = null,
         ?string $createdBefore = null,
+        ?string $sourceId = null,
+        ?string $origin = null,
     ): \Generator {
         $cursor = null;
         do {
-            $page = $this->list($pageSize, $cursor, $endpointId, $eventId, $eventType, $status, $createdAfter, $createdBefore);
+            $page = $this->list($pageSize, $cursor, $endpointId, $eventId, $eventType, $status, $createdAfter, $createdBefore, $sourceId, $origin);
             foreach ($page->data as $item) {
                 yield $item;
             }
